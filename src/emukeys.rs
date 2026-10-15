@@ -683,6 +683,13 @@ fn existing_files(spec: &Spec) -> Vec<(PathBuf, &FileSpec)> {
         .collect()
 }
 
+/// The emulator's settings files that exist (their folders hold its saves too).
+pub fn settings_files(emulator: &str, exe: &Path) -> Vec<PathBuf> {
+    spec(emulator, exe)
+        .map(|spec| existing_files(&spec).into_iter().map(|(p, _)| p).collect())
+        .unwrap_or_default()
+}
+
 /// The emulator's controls, or `None` for emulators this module doesn't handle.
 pub fn load(emulator: &str, exe: &Path) -> Option<Controls> {
     let spec = spec(emulator, exe)?;

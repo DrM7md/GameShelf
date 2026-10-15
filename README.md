@@ -21,9 +21,31 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
 - **Controls** guide per emulator, with keys you can change by pressing them: RetroArch,
   DuckStation, PCSX2, PPSSPP, Dolphin, RPCS3 and Flycast. Only existing keyboard bindings
   are edited, gamepad bindings are kept, and the original file is backed up first.
+- **Continue playing**: the games you played last, one click to pick up again.
 - **Saves & cheats**: see where progress is kept, move RetroArch's saves, states and
   cheats into the GameShelf folder (`Saves`, `States`, `Cheats`), and "resume where I
   left off".
+- **All your progress**: the memory cards and saves of every standalone emulator are
+  linked into `Saves\<emulator>` and `States\<emulator>` (Windows junctions: nothing is
+  moved or changed), and "Back up all my saves" zips everything into `GameShelf\Backups`.
+
+## Code layout
+
+| File | What's in it |
+|---|---|
+| `src/app/mod.rs` | App state, the header, actions shared by every screen |
+| `src/app/library_view.rs` | Library: sidebar, Continue playing, game cards |
+| `src/app/emulators_view.rs` | Emulators: cards and settings window |
+| `src/app/settings_view.rs` | Settings: folder, saves, backup, appearance, covers |
+| `src/app/windows.rs` | Controls and Organize windows |
+| `src/app/widgets.rs` | Small shared drawing helpers |
+| `src/library.rs`, `platform.rs` | Games, systems, launching |
+| `src/covers.rs` | Box art download and cache |
+| `src/workspace.rs`, `organize.rs` | GameShelf folder and Organize my games |
+| `src/controls.rs`, `emukeys.rs` | Controls guide and key changing per emulator |
+| `src/saves.rs` | Save folders, links and backups |
+
+Ideas for later are in [BACKLOG.md](BACKLOG.md).
 - Burgundy, gold and beige theme, in dark and light.
 
 ## Build
