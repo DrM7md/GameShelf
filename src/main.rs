@@ -4,9 +4,11 @@
 mod app;
 mod controls;
 mod covers;
+mod emukeys;
 mod library;
 mod organize;
 mod platform;
+mod saves;
 mod theme;
 mod workspace;
 

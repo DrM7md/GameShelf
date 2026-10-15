@@ -17,6 +17,9 @@ use std::path::{Path, PathBuf};
 pub const GAMES: &str = "Games";
 pub const EMULATORS: &str = "Emulators";
 pub const BIOS: &str = "BIOS";
+pub const SAVES: &str = "Saves";
+pub const STATES: &str = "States";
+pub const CHEATS: &str = "Cheats";
 const MAX_DEPTH: u32 = 4;
 
 const README: &str = "GameShelf folder\r\n\
@@ -27,6 +30,9 @@ Games\\       Put each game in the folder of its system, e.g. Games\\PlayStation
 Emulators\\   Unzip or install emulators here (one folder each).\r\n\
              GameShelf finds them and sets them up for you.\r\n\
 BIOS\\        Keep BIOS files dumped from your own consoles here.\r\n\
+Saves\\       In-game saves (your progress), when RetroArch is set to use this folder.\r\n\
+States\\      Save states (F2 save / F4 load in RetroArch).\r\n\
+Cheats\\      Cheat files.\r\n\
 \r\n\
 Click \"Scan now\" in GameShelf settings after adding files.\r\n";
 
@@ -51,7 +57,9 @@ pub fn create(root: &Path) -> Result<(), String> {
         }
     }
     mkdir(&root.join(EMULATORS))?;
-    mkdir(&root.join(BIOS))?;
+    for dir in [BIOS, SAVES, STATES, CHEATS] {
+        mkdir(&root.join(dir))?;
+    }
     let readme = root.join("README.txt");
     if !readme.exists() {
         fs::write(&readme, README).map_err(|e| e.to_string())?;

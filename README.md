@@ -18,7 +18,12 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
   dropped in are picked up automatically.
 - **Organize my games**: moves every game into its system folder, after showing the plan.
   Never overwrites; multi-file games (`.cue`/`.gdi`/`.m3u`, PS3 folders) move together.
-- **Controls** guide per emulator, with keys you can change by pressing them.
+- **Controls** guide per emulator, with keys you can change by pressing them: RetroArch,
+  DuckStation, PCSX2, PPSSPP, Dolphin, RPCS3 and Flycast. Only existing keyboard bindings
+  are edited, gamepad bindings are kept, and the original file is backed up first.
+- **Saves & cheats**: see where progress is kept, move RetroArch's saves, states and
+  cheats into the GameShelf folder (`Saves`, `States`, `Cheats`), and "resume where I
+  left off".
 - Burgundy, gold and beige theme, in dark and light.
 
 ## Build

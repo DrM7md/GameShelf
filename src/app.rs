@@ -4,7 +4,8 @@ use crate::controls;
 use crate::covers::{self, Cover, Covers, Job, Update};
 use crate::library::{now_secs, EmuConfig, Game, Library};
 use crate::organize::{self, Progress};
-use crate::platform::{Platform, ALL, GAME_EXTENSIONS};
+use crate::platform::{Platform, ALL, GAME_EXTENSIONS, RETROARCH};
+use crate::saves;
 use crate::theme::{Theme, BURGUNDY, INK};
 use crate::workspace::{self, FolderInfo};
 use eframe::egui::{
@@ -277,18 +278,20 @@ impl GameShelfApp {
                     self.listening = None;
                     self.controls_note = Some("Cancelled.".into());
                 } else {
-                    match controls::retroarch_key_name(key) {
-                        Some(raw) => self.rebind(exe, setting, &raw),
-                        None => {
-                            self.controls_note =
-                                Some("That key can't be used here. Try another one.".into())
-                        }
-                    }
+                    self.listening = None;
+                    self.controls_note = Some(match controls::set_key(name, exe, setting, key) {
+                        Ok(msg) => with_running_warning(msg, exe, name),
+                        Err(e) => e,
+                    });
                 }
             }
         }
 
         let controls = controls::for_emulator(name, exe.as_deref());
+        let can_undo = exe
+            .as_deref()
+            .is_some_and(|e| controls::has_backup(name, e));
+        let mut undo = false;
         let listening = self.listening;
         let note = self.controls_note.clone();
         let (mut clicked, mut reset) = (None, false);
@@ -359,8 +362,20 @@ impl GameShelfApp {
                 }
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    if editable && ui.button("↺  Reset to RetroArch defaults").clicked() {
-                        reset = true;
+                    if editable && name == "RetroArch" {
+                        if ui.button("↺  Reset to RetroArch defaults").clicked() {
+                            reset = true;
+                        }
+                    }
+                    if can_undo
+                        && ui
+                            .button("↶  Undo all my key changes")
+                            .on_hover_text(
+                                "Puts the settings file back as it was before GameShelf changed it",
+                            )
+                            .clicked()
+                    {
+                        undo = true;
                     }
                 });
                 ui.add_space(4.0);
@@ -387,10 +402,25 @@ impl GameShelfApp {
                     match controls::write_retroarch(exe, &controls::retroarch_defaults()) {
                         Ok(()) => with_running_warning(
                             "✔ All keys are back to RetroArch's defaults.".into(),
+                            exe,
+                            name,
                         ),
                         Err(e) => format!("Could not save: {e}"),
                     },
                 );
+            }
+        }
+        if undo {
+            if let Some(exe) = exe.as_deref() {
+                self.listening = None;
+                self.controls_note = Some(match controls::restore_backup(name, exe) {
+                    Ok(()) => with_running_warning(
+                        "✔ Your keys are back to how they were before GameShelf.".into(),
+                        exe,
+                        name,
+                    ),
+                    Err(e) => format!("Could not restore: {e}"),
+                });
             }
         }
         if !open {
@@ -398,37 +428,6 @@ impl GameShelfApp {
             self.listening = None;
             self.controls_note = None;
         }
-    }
-
-    /// Gives `setting` the key `raw`. If another action already used that key,
-    /// the two swap so nothing ends up with two jobs.
-    fn rebind(&mut self, exe: &Path, setting: &'static str, raw: &str) {
-        let controls = controls::for_emulator("RetroArch", Some(exe));
-        let current = controls.all().find(|b| b.setting == Some(setting));
-        let action = current.map_or("Key", |b| b.action);
-        let old = current.map(|b| b.raw.clone());
-        let mut changes = vec![(setting, raw.to_string())];
-        let mut swapped = None;
-        let clash = controls.all().find(|b| {
-            b.setting.is_some() && b.setting != Some(setting) && b.raw.eq_ignore_ascii_case(raw)
-        });
-        if let (Some(other), Some(old)) = (clash, old) {
-            if let Some(other_setting) = other.setting {
-                changes.push((other_setting, old.clone()));
-                swapped = Some((other.action, controls::pretty_key(&old)));
-            }
-        }
-        self.listening = None;
-        self.controls_note = Some(match controls::write_retroarch(exe, &changes) {
-            Ok(()) => {
-                let mut msg = format!("✔ {action} → {}", controls::pretty_key(raw));
-                if let Some((other, key)) = swapped {
-                    msg.push_str(&format!("   ·   {other} moved to {key}"));
-                }
-                with_running_warning(msg)
-            }
-            Err(e) => format!("Could not save: {e}"),
-        });
     }
 
     /// The plan preview (confirm / cancel) and, while moving, a progress window.
@@ -1190,8 +1189,148 @@ impl GameShelfApp {
         }
     }
 
+    /// RetroArch's program, if it's set up.
+    fn retroarch_exe(&self) -> Option<PathBuf> {
+        ALL.into_iter()
+            .filter(|p| p.emulator().is_some_and(|i| i.name == RETROARCH))
+            .find_map(|p| {
+                self.lib
+                    .emulators
+                    .get(&p)
+                    .filter(|c| c.is_ready())
+                    .map(|c| c.exe_path())
+            })
+    }
+
+    fn saves_section(&mut self, ui: &mut egui::Ui) {
+        let t = self.theme;
+        let exe = self.retroarch_exe();
+        let dirs = exe.as_deref().and_then(saves::retroarch_dirs);
+        let root = self.lib.root.clone();
+        let mut act = None;
+        section(
+            ui,
+            t,
+            "💾  Saves & cheats",
+            "Your progress: in-game saves, save states (F2 save · F4 load) and cheats.",
+            |ui| {
+                let Some(d) = &dirs else {
+                    ui.label(
+                        RichText::new("Set up RetroArch in the Emulators tab first.")
+                            .color(t.text_weak),
+                    );
+                    return;
+                };
+                egui::Grid::new("save_dirs")
+                    .num_columns(2)
+                    .spacing(vec2(12.0, 6.0))
+                    .show(ui, |ui| {
+                        for (label, path) in [
+                            ("In-game saves", &d.saves),
+                            ("Save states", &d.states),
+                            ("Cheats", &d.cheats),
+                        ] {
+                            ui.label(RichText::new(label).color(t.text_weak));
+                            if ui
+                                .link(
+                                    RichText::new(path.display().to_string())
+                                        .size(12.5)
+                                        .color(t.gold),
+                                )
+                                .on_hover_text("Open this folder")
+                                .clicked()
+                            {
+                                act = Some(SaveAct::Open(path.clone()));
+                            }
+                            ui.end_row();
+                        }
+                    });
+                ui.add_space(8.0);
+                match &root {
+                    Some(root) if d.inside(root) => {
+                        ui.label(
+                            RichText::new("✔ Kept in your GameShelf folder, next to your games.")
+                                .strong()
+                                .color(t.success),
+                        );
+                    }
+                    Some(_) => {
+                        let keep = egui::Button::new(
+                            RichText::new("Keep them in my GameShelf folder")
+                                .strong()
+                                .color(INK),
+                        )
+                        .fill(t.gold)
+                        .min_size(vec2(0.0, 30.0));
+                        if ui.add(keep).clicked() {
+                            act = Some(SaveAct::UseFolder);
+                        }
+                        ui.label(
+                            RichText::new("Existing saves are copied to Saves, States and Cheats; the originals stay.")
+                                .size(12.0)
+                                .color(t.text_weak),
+                        );
+                    }
+                    None => {
+                        ui.label(
+                            RichText::new(
+                                "Choose a GameShelf folder to keep saves with your games.",
+                            )
+                            .size(12.5)
+                            .color(t.text_weak),
+                        );
+                    }
+                }
+                ui.add_space(6.0);
+                let mut resume = d.resume;
+                if ui
+                    .checkbox(&mut resume, "Resume where I left off")
+                    .on_hover_text("RetroArch saves a state when a game closes and continues from it next time")
+                    .changed()
+                {
+                    act = Some(SaveAct::Resume(resume));
+                }
+                ui.label(
+                    RichText::new("PlayStation and other standalone emulators keep saves (memory cards) in their own folders.")
+                        .size(11.5)
+                        .color(t.text_weak),
+                );
+            },
+        );
+
+        let (Some(act), Some(exe)) = (act, exe) else {
+            return;
+        };
+        if let SaveAct::Open(path) = &act {
+            let _ = std::fs::create_dir_all(path);
+            if let Err(e) = workspace::open_folder(path) {
+                self.status = e;
+            }
+            return;
+        }
+        if controls::is_running(&exe) {
+            self.status = "Close RetroArch first: it rewrites its settings when it closes.".into();
+            return;
+        }
+        self.status = match act {
+            SaveAct::UseFolder => match root.map(|r| saves::use_gameshelf_folder(&exe, &r)) {
+                Some(Ok(n)) => format!("Saves, states and cheats now go to your GameShelf folder ({n} file(s) copied)."),
+                Some(Err(e)) => format!("Could not change the save folders: {e}"),
+                None => return,
+            },
+            SaveAct::Resume(on) => match saves::set_resume(&exe, on) {
+                Ok(()) if on => "Games will continue where you left off.".into(),
+                Ok(()) => "Resume turned off.".into(),
+                Err(e) => format!("Could not save: {e}"),
+            },
+            SaveAct::Open(_) => return,
+        };
+    }
+
     fn other_sections(&mut self, ui: &mut egui::Ui) {
         let t = self.theme;
+        self.saves_section(ui);
+        ui.add_space(GAP);
         section(
             ui,
             t,
@@ -1413,6 +1552,12 @@ fn grid(available: f32, min: f32, gap: f32) -> (usize, f32) {
     let columns = ((available + gap) / (min + gap)).floor().max(1.0) as usize;
     let cell = (available - gap * (columns as f32 - 1.0)) / columns as f32;
     (columns, cell)
+}
+
+enum SaveAct {
+    UseFolder,
+    Resume(bool),
+    Open(PathBuf),
 }
 
 enum FolderAct {
@@ -1826,10 +1971,13 @@ fn system_chip(ui: &mut egui::Ui, t: Theme, p: Platform, core: Option<bool>) {
     }
 }
 
-/// Adds a warning when RetroArch is open: it saves its settings on exit and would undo ours.
-fn with_running_warning(mut msg: String) -> String {
-    if controls::retroarch_running() {
-        msg.push_str("   ·   Close RetroArch now, or it will undo this when it closes.");
+/// Adds a warning when the emulator is open: emulators save their settings on exit,
+/// which would undo ours.
+fn with_running_warning(mut msg: String, exe: &Path, name: &str) -> String {
+    if controls::is_running(exe) {
+        msg.push_str(&format!(
+            "   ·   Close {name} now, or it will undo this when it closes."
+        ));
     }
     msg
 }

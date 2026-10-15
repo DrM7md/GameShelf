@@ -1,6 +1,7 @@
 //! Keyboard controls for each emulator. For RetroArch they're read from, and
 //! changed in, its own `retroarch.cfg`, so the guide always shows the keys in use.
 
+use crate::emukeys;
 use eframe::egui;
 use std::collections::HashMap;
 use std::fs;
@@ -39,6 +40,14 @@ impl Controls {
 }
 
 pub fn for_emulator(name: &str, exe: Option<&Path>) -> Controls {
+    if name != "RetroArch" {
+        // Read the emulator's own settings file when it's set up.
+        if let Some(controls) = exe.and_then(|exe| emukeys::load(name, exe)) {
+            if controls.editable || exe.is_some_and(|e| e.is_file()) {
+                return controls;
+            }
+        }
+    }
     match name {
         "RetroArch" => retroarch(exe),
         "DuckStation" => other(
@@ -287,10 +296,69 @@ pub fn write_retroarch(exe: &Path, changes: &[(&str, String)]) -> Result<(), Str
     fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
-/// Is RetroArch open? It saves its settings when it closes, which would undo ours.
-pub fn retroarch_running() -> bool {
+/// Changes one key of any emulator. If another action already used that key,
+/// the two swap. Returns a short description of what changed.
+pub fn set_key(
+    emulator: &str,
+    exe: &Path,
+    id: &'static str,
+    key: egui::Key,
+) -> Result<String, String> {
+    if emulator != "RetroArch" {
+        return emukeys::set_key(emulator, exe, id, key);
+    }
+    let raw = retroarch_key_name(key).ok_or("That key can't be used here. Try another one.")?;
+    let controls = retroarch(Some(exe));
+    let current = controls.all().find(|b| b.setting == Some(id));
+    let action = current.map_or("Key", |b| b.action);
+    let old = current.map(|b| b.raw.clone());
+    let mut changes = vec![(id, raw.clone())];
+    let mut swapped = None;
+    let clash = controls
+        .all()
+        .find(|b| b.setting.is_some() && b.setting != Some(id) && b.raw.eq_ignore_ascii_case(&raw));
+    if let (Some(other), Some(old)) = (clash, old) {
+        if let Some(other_setting) = other.setting {
+            changes.push((other_setting, old.clone()));
+            swapped = Some((other.action, pretty_key(&old)));
+        }
+    }
+    write_retroarch(exe, &changes)?;
+    let mut msg = format!("✔ {action} → {}", pretty_key(&raw));
+    if let Some((other, key)) = swapped {
+        msg.push_str(&format!("   ·   {other} moved to {key}"));
+    }
+    Ok(msg)
+}
+
+/// Whether there's a backup from before GameShelf's first key change.
+pub fn has_backup(emulator: &str, exe: &Path) -> bool {
+    if emulator == "RetroArch" {
+        retroarch_cfg(exe).is_some_and(|p| p.with_extension("cfg.gameshelf-backup").is_file())
+    } else {
+        emukeys::has_backup(emulator, exe)
+    }
+}
+
+/// Puts the settings back as they were before GameShelf changed any key.
+pub fn restore_backup(emulator: &str, exe: &Path) -> Result<(), String> {
+    if emulator != "RetroArch" {
+        return emukeys::restore_backup(emulator, exe).map(|_| ());
+    }
+    let path = retroarch_cfg(exe).ok_or("RetroArch's folder wasn't found")?;
+    let backup = path.with_extension("cfg.gameshelf-backup");
+    fs::copy(&backup, &path).map_err(|e| e.to_string())?;
+    fs::remove_file(&backup).map_err(|e| e.to_string())
+}
+
+/// Is this emulator open? Emulators save their settings when they close, which
+/// would undo a change made while they run.
+pub fn is_running(exe: &Path) -> bool {
+    let Some(name) = exe.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
     let mut cmd = std::process::Command::new("tasklist");
-    cmd.args(["/FI", "IMAGENAME eq retroarch.exe", "/NH"]);
+    cmd.args(["/FI", &format!("IMAGENAME eq {name}"), "/NH"]);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -301,7 +369,7 @@ pub fn retroarch_running() -> bool {
         .map(|o| {
             String::from_utf8_lossy(&o.stdout)
                 .to_ascii_lowercase()
-                .contains("retroarch.exe")
+                .contains(&name.to_ascii_lowercase())
         })
         .unwrap_or(false)
 }
