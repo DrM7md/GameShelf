@@ -163,16 +163,25 @@ fn find_latest(agent: &ureq::Agent, emulator: &str) -> Result<Download, String> 
 /// Downloads, unpacks and finds the program. Runs on a background thread.
 pub fn install(emulator: &'static str, root: PathBuf, tx: Sender<Msg>, ctx: egui::Context) {
     std::thread::spawn(move || {
-        let send = |m: Msg| {
+        let mut send = |m: Msg| {
             let _ = tx.send(m);
             ctx.request_repaint();
         };
-        let result = run(emulator, &root, &send);
+        let result = run(emulator, &root, &mut send);
         send(Msg::Done(result));
     });
 }
 
-fn run(emulator: &str, root: &Path, send: &dyn Fn(Msg)) -> Result<PathBuf, String> {
+/// The same install, on the calling thread (for `gameshelf --install`).
+pub fn install_now(
+    emulator: &str,
+    root: &Path,
+    report: &mut dyn FnMut(Msg),
+) -> Result<PathBuf, String> {
+    run(emulator, root, report)
+}
+
+fn run(emulator: &str, root: &Path, send: &mut dyn FnMut(Msg)) -> Result<PathBuf, String> {
     let emulators = root.join(workspace::EMULATORS);
     let target = emulators.join(emulator);
     if target.exists() {
@@ -229,7 +238,12 @@ fn run(emulator: &str, root: &Path, send: &dyn Fn(Msg)) -> Result<PathBuf, Strin
     Ok(exe)
 }
 
-fn download(agent: &ureq::Agent, url: &str, to: &Path, send: &dyn Fn(Msg)) -> Result<(), String> {
+fn download(
+    agent: &ureq::Agent,
+    url: &str,
+    to: &Path,
+    send: &mut dyn FnMut(Msg),
+) -> Result<(), String> {
     let resp = agent
         .get(url)
         .call()

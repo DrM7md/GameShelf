@@ -21,6 +21,16 @@ fn main() -> eframe::Result {
         organize_from_command_line();
         return Ok(());
     }
+    // `gameshelf --install DuckStation`: the Install button, without the window.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(name) = args
+        .iter()
+        .position(|a| a == "--install")
+        .and_then(|i| args.get(i + 1))
+    {
+        install_from_command_line(name);
+        return Ok(());
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("GameShelf")
@@ -33,6 +43,50 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| Ok(Box::new(app::GameShelfApp::new(cc)))),
     )
+}
+
+fn install_from_command_line(name: &str) {
+    let (mut lib, _) = library::Library::load();
+    let Some(root) = lib.root.clone().or_else(workspace::default_root) else {
+        println!("No GameShelf folder.");
+        return;
+    };
+    if let Err(e) = workspace::create(&root) {
+        println!("Could not create the GameShelf folder: {e}");
+        return;
+    }
+    let mut last_mb = 0;
+    let report = |msg: install::Msg| match msg {
+        install::Msg::Status(s) => println!("{s}"),
+        install::Msg::Progress { done, total } => {
+            let mb = done / (1024 * 1024);
+            // One line every 5 MB is plenty.
+            if mb >= last_mb + 5 || total == Some(done) {
+                last_mb = mb;
+                match total {
+                    Some(t) => println!("  {mb} / {} MB", t / (1024 * 1024)),
+                    None => println!("  {mb} MB"),
+                }
+            }
+        }
+        install::Msg::Done(_) => {}
+    };
+    let mut report = report;
+    match install::install_now(name, &root, &mut report) {
+        Ok(exe) => {
+            for p in platform::ALL {
+                if p.emulator().is_some_and(|i| i.name == name) {
+                    lib.emulators.entry(p).or_default().exe = exe.display().to_string();
+                }
+            }
+            lib.root.get_or_insert(root);
+            match lib.save() {
+                Ok(()) => println!("Installed: {}", exe.display()),
+                Err(e) => println!("Installed, but the library couldn't be saved: {e}"),
+            }
+        }
+        Err(e) => println!("Could not install {name}: {e}"),
+    }
 }
 
 fn organize_from_command_line() {
