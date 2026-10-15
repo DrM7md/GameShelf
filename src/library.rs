@@ -63,6 +63,15 @@ pub struct Library {
     pub scan_on_start: bool,
     #[serde(default = "default_true")]
     pub auto_covers: bool,
+    /// Free games: where "My list" is read from, and whether Homebrew Hub is shown.
+    #[serde(default = "default_list_url")]
+    pub free_list_url: String,
+    #[serde(default = "default_true")]
+    pub homebrew_hub: bool,
+}
+
+fn default_list_url() -> String {
+    crate::freegames::DEFAULT_LIST_URL.to_string()
 }
 
 fn default_true() -> bool {
@@ -78,6 +87,8 @@ impl Default for Library {
             root: None,
             scan_on_start: true,
             auto_covers: true,
+            free_list_url: default_list_url(),
+            homebrew_hub: true,
         }
     }
 }

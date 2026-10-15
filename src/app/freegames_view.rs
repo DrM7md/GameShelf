@@ -1,8 +1,9 @@
-//! The Free games tab: homebrew from Homebrew Hub, one click to add to the library.
+//! The Free games tab: "My list" (GameShelf's own list on GitHub) and Homebrew Hub,
+//! one click to add a game to the library.
 
 use super::library_view::{draw_art, COVER_ASPECT, GAME_CARD_MIN};
 use super::*;
-use crate::freegames::{self, CatalogMsg, FreeGame, GetResult};
+use crate::freegames::{self, FreeGame, GetResult, HubMsg, ListMsg, Source};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Sender;
 
@@ -10,52 +11,74 @@ use std::sync::mpsc::Sender;
 const PAGE: usize = 60;
 
 #[derive(Default)]
-pub(super) struct Catalog {
+struct HubCatalog {
     games: Vec<FreeGame>,
     total: usize,
     loading: bool,
     error: Option<String>,
 }
 
+#[derive(Default)]
+struct MyList {
+    games: Vec<FreeGame>,
+    loading: bool,
+    note: Option<String>,
+}
+
 pub(super) struct FreeState {
-    system: Platform,
+    system: Option<Platform>,
     search: String,
     shown: usize,
-    catalogs: HashMap<Platform, Catalog>,
-    catalog_tx: Sender<CatalogMsg>,
-    catalog_rx: Receiver<CatalogMsg>,
+    /// `None` until first needed, or after the settings change (then it reloads).
+    list: Option<MyList>,
+    hub: HashMap<Platform, HubCatalog>,
+    list_tx: Sender<ListMsg>,
+    list_rx: Receiver<ListMsg>,
+    hub_tx: Sender<HubMsg>,
+    hub_rx: Receiver<HubMsg>,
     get_tx: Sender<GetResult>,
     get_rx: Receiver<GetResult>,
-    /// Games being downloaded (by slug).
+    /// Games being downloaded (by key).
     getting: HashSet<String>,
 }
 
 impl FreeState {
     pub(super) fn new() -> Self {
-        let (catalog_tx, catalog_rx) = channel();
+        let (list_tx, list_rx) = channel();
+        let (hub_tx, hub_rx) = channel();
         let (get_tx, get_rx) = channel();
         Self {
-            system: Platform::Gba,
+            system: None,
             search: String::new(),
             shown: PAGE,
-            catalogs: HashMap::new(),
-            catalog_tx,
-            catalog_rx,
+            list: None,
+            hub: HashMap::new(),
+            list_tx,
+            list_rx,
+            hub_tx,
+            hub_rx,
             get_tx,
             get_rx,
             getting: HashSet::new(),
         }
     }
+
+    /// Reload both sources next time the tab is shown (after a settings change).
+    pub(super) fn reset(&mut self) {
+        self.list = None;
+        self.hub.clear();
+        self.system = None;
+    }
 }
 
 /// Cache key for a free game's picture (not a file path; just unique).
-fn art_key(slug: &str) -> PathBuf {
-    PathBuf::from(format!("homebrew-hub:{slug}"))
+fn art_key(key: &str) -> PathBuf {
+    PathBuf::from(format!("free-games:{key}"))
 }
 
 /// Where a free game's picture is kept once downloaded.
-fn art_file(slug: &str) -> Option<PathBuf> {
-    let safe: String = slug
+fn art_file(key: &str) -> Option<PathBuf> {
+    let safe: String = key
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
@@ -65,7 +88,7 @@ fn art_file(slug: &str) -> Option<PathBuf> {
             }
         })
         .collect();
-    Library::covers_dir().map(|d| d.join("homebrew-hub").join(format!("{safe}.img")))
+    Library::covers_dir().map(|d| d.join("free-games").join(format!("{safe}.img")))
 }
 
 enum CardState {
@@ -75,44 +98,54 @@ enum CardState {
 }
 
 impl GameShelfApp {
-    /// New pages of the catalog, and finished downloads.
+    /// The list, Homebrew Hub pages, and finished downloads.
     pub(super) fn poll_free_games(&mut self) {
-        while let Ok(msg) = self.free.catalog_rx.try_recv() {
+        while let Ok(ListMsg::Loaded { games, note, .. }) = self.free.list_rx.try_recv() {
+            self.free.list = Some(MyList {
+                games,
+                loading: false,
+                note,
+            });
+        }
+        while let Ok(msg) = self.free.hub_rx.try_recv() {
             match msg {
-                CatalogMsg::Page {
+                HubMsg::Page {
                     platform,
                     games,
                     total,
                 } => {
-                    let c = self.free.catalogs.entry(platform).or_default();
+                    let c = self.free.hub.entry(platform).or_default();
                     c.games.extend(games);
                     c.total = total;
                 }
-                CatalogMsg::Done { platform } => {
-                    self.free.catalogs.entry(platform).or_default().loading = false;
+                HubMsg::Done { platform } => {
+                    self.free.hub.entry(platform).or_default().loading = false;
                 }
-                CatalogMsg::Failed { platform, error } => {
-                    let c = self.free.catalogs.entry(platform).or_default();
+                HubMsg::Failed { platform, error } => {
+                    let c = self.free.hub.entry(platform).or_default();
                     c.loading = false;
                     c.error = Some(error);
                 }
             }
         }
         while let Ok(done) = self.free.get_rx.try_recv() {
-            self.free.getting.remove(&done.slug);
+            self.free.getting.remove(&done.key);
             match done.result {
                 Ok(path) => {
                     let added = self.lib.add_path(&path);
-                    // Give the new game the catalog picture as its cover.
-                    let art = art_file(&done.slug).filter(|f| f.is_file());
-                    let mut title = String::new();
-                    for g in self
+                    let art = art_file(&done.key).filter(|f| f.is_file());
+                    let new_games: Vec<&mut Game> = self
                         .lib
                         .games
                         .iter_mut()
                         .filter(|g| g.path.starts_with(&path))
-                    {
-                        title = g.title.clone();
+                        .collect();
+                    let single = new_games.len() == 1;
+                    for g in new_games {
+                        // One game: use the list's title (better than "EBOOT" or a file name).
+                        if single {
+                            g.title = done.title.clone();
+                        }
                         if g.cover.is_none() {
                             if let Some(art) = &art {
                                 g.cover = Some(art.clone());
@@ -121,7 +154,7 @@ impl GameShelfApp {
                         }
                     }
                     self.status = if added > 0 {
-                        format!("✔ {title} is in your library.")
+                        format!("✔ {} is in your library.", done.title)
                     } else {
                         format!(
                             "Downloaded to {}, but no game file was found in it.",
@@ -132,7 +165,7 @@ impl GameShelfApp {
                     self.folder_info = None;
                     self.queue_covers();
                 }
-                Err(e) => self.status = format!("Could not get that game: {e}"),
+                Err(e) => self.status = format!("Could not get {}: {e}", done.title),
             }
         }
     }
@@ -151,23 +184,57 @@ impl GameShelfApp {
             self.dirty = true;
         }
         let dir = workspace::system_dir(&root, game.platform);
-        self.free.getting.insert(game.slug.clone());
+        self.free.getting.insert(game.key());
         self.status = format!("Downloading {}…", game.title);
         freegames::get(game, dir, self.free.get_tx.clone(), ctx.clone());
     }
 
+    /// Systems with games: those in My list, plus Homebrew Hub's when it's on.
+    fn free_systems(&self) -> Vec<Platform> {
+        ALL.into_iter()
+            .filter(|p| {
+                let in_list = self
+                    .free
+                    .list
+                    .as_ref()
+                    .is_some_and(|l| l.games.iter().any(|g| g.platform == *p));
+                in_list || (self.lib.homebrew_hub && freegames::HUB_SYSTEMS.contains(p))
+            })
+            .collect()
+    }
+
     pub(super) fn free_games_tab(&mut self, ui: &mut egui::Ui) {
         let t = self.theme;
-        let system = self.free.system;
-        if !self.free.catalogs.contains_key(&system) {
-            self.free.catalogs.insert(
+        if self.free.list.is_none() {
+            self.free.list = Some(MyList {
+                loading: true,
+                ..Default::default()
+            });
+            freegames::load_list(
+                self.lib.free_list_url.clone(),
+                self.free.list_tx.clone(),
+                ui.ctx().clone(),
+            );
+        }
+        let systems = self.free_systems();
+        let system = match self.free.system.filter(|s| systems.contains(s)) {
+            Some(s) => s,
+            None => {
+                let first = systems.first().copied().unwrap_or(Platform::Gba);
+                self.free.system = Some(first);
+                first
+            }
+        };
+        let hub_on = self.lib.homebrew_hub && freegames::HUB_SYSTEMS.contains(&system);
+        if hub_on && !self.free.hub.contains_key(&system) {
+            self.free.hub.insert(
                 system,
-                Catalog {
+                HubCatalog {
                     loading: true,
                     ..Default::default()
                 },
             );
-            freegames::load(system, self.free.catalog_tx.clone(), ui.ctx().clone());
+            freegames::load_hub(system, self.free.hub_tx.clone(), ui.ctx().clone());
         }
 
         ui.add_space(14.0);
@@ -178,103 +245,117 @@ impl GameShelfApp {
                     .strong()
                     .color(t.text),
             );
-            ui.label(
-                RichText::new("homebrew their makers share for free, from").color(t.text_weak),
-            );
-            ui.hyperlink_to(
-                RichText::new("Homebrew Hub").color(t.gold),
-                "https://hh.gbdev.io",
-            );
+            let sources = if self.lib.homebrew_hub {
+                "homebrew their makers share for free, from your list ★ and Homebrew Hub"
+            } else {
+                "homebrew their makers share for free, from your list ★"
+            };
+            ui.label(RichText::new(sources).color(t.text_weak));
         });
         ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            for p in freegames::SYSTEMS {
-                let label = match self
+        ui.horizontal_wrapped(|ui| {
+            for p in &systems {
+                let mine = self
                     .free
-                    .catalogs
-                    .get(&p)
-                    .map(|c| c.total)
-                    .filter(|n| *n > 0)
-                {
-                    Some(n) => format!("{}  {n}", p.name()),
-                    None => p.name().to_string(),
+                    .list
+                    .as_ref()
+                    .map_or(0, |l| l.games.iter().filter(|g| g.platform == *p).count());
+                let hub = self.free.hub.get(p).map_or(0, |c| c.total);
+                let count = mine + hub;
+                let label = if count > 0 {
+                    format!("{}  {count}", p.name())
+                } else {
+                    p.name().to_string()
                 };
-                if chip(ui, t, &label, self.free.system == p) && self.free.system != p {
-                    self.free.system = p;
+                if chip(ui, t, &label, system == *p) && system != *p {
+                    self.free.system = Some(*p);
                     self.free.shown = PAGE;
                 }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(&mut self.free.search)
-                            .hint_text("🔍  Title, maker or tag (e.g. puzzle)")
-                            .desired_width(260.0)
-                            .margin(vec2(8.0, 5.0)),
-                    )
-                    .changed()
-                {
-                    self.free.shown = PAGE;
-                }
-            });
         });
-        ui.add_space(8.0);
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.free.search)
+                        .hint_text("🔍  Title, maker or tag (e.g. puzzle)")
+                        .desired_width(300.0)
+                        .margin(vec2(8.0, 5.0)),
+                )
+                .changed()
+            {
+                self.free.shown = PAGE;
+            }
+            if let Some(list) = &self.free.list {
+                if list.loading {
+                    ui.spinner();
+                    ui.label(RichText::new("Reading your list…").color(t.text_weak));
+                }
+                if let Some(note) = &list.note {
+                    ui.label(RichText::new(note).size(12.0).color(t.warning));
+                }
+            }
+        });
+        ui.add_space(6.0);
 
         let mut retry = false;
-        if let Some(c) = self.free.catalogs.get(&system) {
-            if c.loading {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(
-                        RichText::new(format!(
-                            "Loading {} of {}…",
-                            c.games.len(),
-                            c.total.max(c.games.len())
-                        ))
-                        .color(t.text_weak),
-                    );
-                });
-            }
-            if let Some(e) = &c.error {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!("Couldn't load the list: {e}")).color(t.warning),
-                    );
-                    retry = ui.button("Try again").clicked();
-                });
+        if hub_on {
+            if let Some(c) = self.free.hub.get(&system) {
+                if c.loading {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(
+                            RichText::new(format!(
+                                "Loading Homebrew Hub: {} of {}…",
+                                c.games.len(),
+                                c.total.max(c.games.len())
+                            ))
+                            .color(t.text_weak),
+                        );
+                    });
+                }
+                if let Some(e) = &c.error {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(format!("Couldn't load Homebrew Hub: {e}"))
+                                .color(t.warning),
+                        );
+                        retry = ui.button("Try again").clicked();
+                    });
+                }
             }
         }
         if retry {
-            self.free.catalogs.remove(&system);
+            self.free.hub.remove(&system);
             return;
         }
 
-        // Which results to show, and whether each is already in the library.
-        let root = self.lib.root.clone();
+        // My list first, then Homebrew Hub.
         let search = self.free.search.clone();
-        let matching: Vec<FreeGame> = self
+        let mine = self.free.list.iter().flat_map(|l| l.games.iter());
+        let hub = self
             .free
-            .catalogs
+            .hub
             .get(&system)
-            .map(|c| {
-                c.games
-                    .iter()
-                    .filter(|g| g.matches(&search))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+            .into_iter()
+            .flat_map(|c| c.games.iter());
+        let matching: Vec<FreeGame> = mine
+            .chain(hub)
+            .filter(|g| g.platform == system && g.matches(&search))
+            .cloned()
+            .collect();
         let total_matching = matching.len();
+        let root = self.lib.root.clone();
         let visible: Vec<(FreeGame, CardState)> = matching
             .into_iter()
             .take(self.free.shown)
             .map(|g| {
                 let in_library = root.as_ref().is_some_and(|r| {
                     freegames::destination(&g, &workspace::system_dir(r, g.platform)).is_some_and(
-                        |d| self.lib.games.iter().any(|lg| lg.path.starts_with(&d)) || d.exists(),
+                        |d| d.exists() || self.lib.games.iter().any(|lg| lg.path.starts_with(&d)),
                     )
                 });
-                let state = if self.free.getting.contains(&g.slug) {
+                let state = if self.free.getting.contains(&g.key()) {
                     CardState::Getting
                 } else if in_library {
                     CardState::InLibrary
@@ -284,7 +365,9 @@ impl GameShelfApp {
                 (g, state)
             })
             .collect();
-        if visible.is_empty() && !self.free.catalogs.get(&system).is_some_and(|c| c.loading) {
+        let loading = self.free.list.as_ref().is_some_and(|l| l.loading)
+            || self.free.hub.get(&system).is_some_and(|c| c.loading);
+        if visible.is_empty() && !loading {
             ui.label(
                 RichText::new("No games match.")
                     .size(16.0)
@@ -304,16 +387,16 @@ impl GameShelfApp {
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = GAP;
                         for (game, state) in row {
-                            let key = art_key(&game.slug);
-                            let art = self.covers.get(&key);
+                            let key = game.key();
+                            let art = self.covers.get(&art_key(&key));
                             let (clicked, rect) = free_card(ui, t, cell, game, art, state);
                             if clicked {
                                 get = Some(game.clone());
                             }
                             // Fetch pictures only for cards on screen.
                             if art.is_none() && ui.is_rect_visible(rect) {
-                                if let Some(url) = game.cover_url() {
-                                    want_art.push((game.slug.clone(), url));
+                                if let Some(url) = &game.cover_url {
+                                    want_art.push((key, url.clone()));
                                 }
                             }
                         }
@@ -336,10 +419,10 @@ impl GameShelfApp {
                 }
             });
 
-        for (slug, url) in want_art {
-            if let Some(save_to) = art_file(&slug) {
+        for (key, url) in want_art {
+            if let Some(save_to) = art_file(&key) {
                 self.covers.request(Job::Url {
-                    key: art_key(&slug),
+                    key: art_key(&key),
                     url,
                     save_to,
                 });
@@ -376,16 +459,31 @@ fn free_card(
                 let (area, response) =
                     ui.allocate_exact_size(vec2(width, width * COVER_ASPECT), Sense::hover());
                 draw_art(ui, t, &game.title, game.platform, false, art, area);
-                let mut info = String::new();
+                // Games from your own list get a gold star on the picture.
+                if game.source == Source::MyList {
+                    ui.painter().text(
+                        area.right_top() + vec2(-8.0, 8.0),
+                        Align2::RIGHT_TOP,
+                        "★",
+                        FontId::proportional(15.0),
+                        t.gold,
+                    );
+                }
+                let mut info = Vec::new();
+                if let Some(d) = &game.description {
+                    info.push(d.clone());
+                }
                 if !game.tags.is_empty() {
-                    info.push_str(&game.tags.join(", "));
+                    info.push(game.tags.join(", "));
                 }
-                if let Some(site) = &game.website {
-                    info.push_str(&format!("\n{site}"));
+                if let Some(license) = &game.license {
+                    info.push(format!("License: {license}"));
                 }
-                if !info.is_empty() {
-                    response.on_hover_text(info);
-                }
+                info.push(match game.source {
+                    Source::MyList => "From your list".to_string(),
+                    Source::HomebrewHub => "From Homebrew Hub".to_string(),
+                });
+                response.on_hover_text(info.join("\n"));
                 ui.add_space(6.0);
                 ui.add(
                     egui::Label::new(RichText::new(&game.title).strong().size(14.5).color(t.text))
@@ -394,11 +492,6 @@ fn free_card(
                 let by = game.developer.as_deref().unwrap_or("Unknown maker");
                 ui.add(
                     egui::Label::new(RichText::new(by).size(11.5).color(t.text_weak)).truncate(),
-                );
-                let license = game.license.as_deref().unwrap_or("License: see its page");
-                ui.add(
-                    egui::Label::new(RichText::new(license).size(10.5).color(t.text_weak))
-                        .truncate(),
                 );
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {

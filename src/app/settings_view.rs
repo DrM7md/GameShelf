@@ -548,9 +548,68 @@ impl GameShelfApp {
         }
     }
 
+    fn free_games_section(&mut self, ui: &mut egui::Ui) {
+        let t = self.theme;
+        let mut reload = false;
+        section(
+            ui,
+            t,
+            "🎁  Free games",
+            "Where the Free games tab gets its games.",
+            |ui| {
+                if ui
+                    .checkbox(
+                        &mut self.lib.homebrew_hub,
+                        "Homebrew Hub (Game Boy, Game Boy Color, Game Boy Advance, NES)",
+                    )
+                    .changed()
+                {
+                    reload = true;
+                }
+                ui.add_space(6.0);
+                ui.label(RichText::new("My list ★ (a free-games.json on GitHub)").color(t.text));
+                ui.horizontal(|ui| {
+                    let edit = egui::TextEdit::singleline(&mut self.lib.free_list_url)
+                        .desired_width((ui.available_width() - 80.0).max(200.0));
+                    if ui.add(edit).lost_focus() {
+                        reload = true;
+                    }
+                    if ui.button("Reset").clicked() {
+                        self.lib.free_list_url = crate::freegames::DEFAULT_LIST_URL.to_string();
+                        reload = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("🔄 Reload the lists").clicked() {
+                        reload = true;
+                    }
+                    if let Some(page) = github_page(&self.lib.free_list_url) {
+                        if ui
+                            .link(
+                                RichText::new("Edit my list on GitHub")
+                                    .size(12.5)
+                                    .color(t.gold),
+                            )
+                            .on_hover_text(&page)
+                            .clicked()
+                        {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(page));
+                        }
+                    }
+                });
+            },
+        );
+        if reload {
+            self.free.reset();
+            self.dirty = true;
+        }
+    }
+
     pub(super) fn other_sections(&mut self, ui: &mut egui::Ui) {
         let t = self.theme;
         self.saves_section(ui);
+        ui.add_space(GAP);
+        self.free_games_section(ui);
         ui.add_space(GAP);
         section(
             ui,
@@ -741,4 +800,14 @@ pub(super) fn folder_row(
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(format!("Open Games\\{}", p.name()))
         .clicked()
+}
+
+/// `raw.githubusercontent.com/<owner>/<repo>/<branch>/<path>` → its page on github.com.
+fn github_page(raw: &str) -> Option<String> {
+    let rest = raw.strip_prefix("https://raw.githubusercontent.com/")?;
+    let mut parts = rest.splitn(4, '/');
+    let (owner, repo, branch, path) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    Some(format!(
+        "https://github.com/{owner}/{repo}/blob/{branch}/{path}"
+    ))
 }

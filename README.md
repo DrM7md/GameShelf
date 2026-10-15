@@ -17,10 +17,15 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
   (GitHub releases, ppsspp.org, buildbot.libretro.com), unpacks it into
   `Emulators\<name>` and sets it up. Dolphin's site doesn't allow automated downloads,
   so for Dolphin it opens the download page.
-- **Free games**: browse homebrew that its makers share for free on
-  [Homebrew Hub](https://hh.gbdev.io) (Game Boy, Game Boy Color, Game Boy Advance, NES),
-  search by title, maker or tag, and **Get** downloads a game into its system folder and
-  adds it to the library with its picture.
+- **Free games**: homebrew that its makers share for free, from two sources:
+  - **My list** ★: [`catalog/free-games.json`](catalog/free-games.json) in this repository
+    (N64, Genesis, SNES, Dreamcast, PSP, PS1…). GameShelf reads it from GitHub, so editing
+    it here updates the app; see [catalog/README.md](catalog/README.md).
+  - **[Homebrew Hub](https://hh.gbdev.io)**: hundreds of Game Boy, Game Boy Color,
+    Game Boy Advance and NES games (can be turned off in Settings).
+
+  Search by title, maker or tag; **Get** downloads a game into its system folder and adds
+  it to the library with its picture.
 - **GameShelf folder** (`Games\<System>`, `Emulators`, `BIOS`): new games and emulators
   dropped in are picked up automatically.
 - **Organize my games**: moves every game into its system folder, after showing the plan.

@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "about": "GameShelf's own list of free homebrew games. Each game downloads straight from its maker's GitHub release. Add a game: copy an entry, change the fields, commit. See catalog/README.md.",
+  "games": [
+    {
+      "id": "flappybird-n64",
+      "title": "Flappy Bird 64",
+      "system": "N64",
+      "developer": "meeq",
+      "description": "Clone of Flappy Bird for Nintendo 64, built with LibDragon.",
+      "tags": ["arcade"],
+      "website": "https://github.com/meeq/flappybird-n64",
+      "cover": "https://opengraph.githubassets.com/1/meeq/flappybird-n64",
+      "files": ["https://github.com/meeq/flappybird-n64/releases/download/v1.7/FlappyBird-v1.7.z64"]
+    },
+    {
+      "id": "sblobber64",
+      "title": "Super Blobber 64",
+      "system": "N64",
+      "developer": "vrgl117-games",
+      "description": "N64 game made for the N64brew Game Jam #1 (theme: size).",
+      "tags": ["puzzle", "game jam"],
+      "website": "https://github.com/vrgl117-games/sblobber64",
+      "cover": "https://opengraph.githubassets.com/1/vrgl117-games/sblobber64",
+      "files": ["https://github.com/vrgl117-games/sblobber64/releases/download/n64brew-jam-1/sblobber64.z64"]
+    },
+    {
+      "id": "teeworlds64",
+      "title": "Teeworlds 64",
+      "system": "N64",
+      "developer": "elohmeier",
+      "description": "Offline Teeworlds adaptation for the Nintendo 64 (needs the Expansion Pak, which emulators provide).",
+      "tags": ["action", "shooter"],
+      "website": "https://github.com/elohmeier/tw64",
+      "cover": "https://opengraph.githubassets.com/1/elohmeier/tw64",
+      "files": ["https://github.com/elohmeier/tw64/releases/download/v1.4.0/teeworlds64.z64"]
+    },
+    {
+      "id": "n64brew-gamejam-2024",
+      "title": "N64brew Game Jam 2024",
+      "system": "N64",
+      "developer": "N64brew community",
+      "description": "A collection of minigames made together for the N64brew Game Jam 2024.",
+      "tags": ["party", "minigames", "game jam"],
+      "website": "https://github.com/n64brew/N64brew-GameJam2024",
+      "cover": "https://opengraph.githubassets.com/1/n64brew/N64brew-GameJam2024",
+      "files": ["https://github.com/n64brew/N64brew-GameJam2024/releases/download/1.2.1/gamejam2024.z64"]
+    },
+    {
+      "id": "cave-story-md",
+      "title": "Cave Story (Mega Drive)",
+      "system": "Genesis",
+      "developer": "andwn",
+      "description": "A fan port of Cave Story for the Sega Mega Drive / Genesis (English version).",
+      "tags": ["action", "platformer", "adventure"],
+      "website": "https://github.com/andwn/cave-story-md",
+      "cover": "https://opengraph.githubassets.com/1/andwn/cave-story-md",
+      "files": ["https://github.com/andwn/cave-story-md/releases/download/v0.8.8/doukutsu-en.gen"]
+    },
+    {
+      "id": "kleleatoms-md",
+      "title": "KłełeAtoms",
+      "system": "Genesis",
+      "developer": "Nightwolf-47",
+      "description": "Mega Drive port of the atoms strategy game KłełeAtoms, made with SGDK.",
+      "tags": ["strategy", "puzzle"],
+      "website": "https://github.com/Nightwolf-47/KleleAtoms-MD",
+      "cover": "https://opengraph.githubassets.com/1/Nightwolf-47/KleleAtoms-MD",
+      "files": ["https://github.com/Nightwolf-47/KleleAtoms-MD/releases/download/v1.2.1/kleleatoms-md-121.bin"]
+    },
+    {
+      "id": "gnome-runner",
+      "title": "Gnome Runner",
+      "system": "Genesis",
+      "developer": "SpectatorEx",
+      "description": "An endless runner for the Sega Mega Drive / Genesis.",
+      "tags": ["runner", "arcade"],
+      "website": "https://github.com/SpectatorEx/Gnome-Runner",
+      "cover": "https://opengraph.githubassets.com/1/SpectatorEx/Gnome-Runner",
+      "files": ["https://github.com/SpectatorEx/Gnome-Runner/releases/download/1.0.1/Gnome_Runner.bin"]
+    },
+    {
+      "id": "penguin-world",
+      "title": "Penguin World",
+      "system": "Genesis",
+      "developer": "alicesim1",
+      "description": "Indie retro game for the Sega Mega Drive / Genesis, made with SGDK.",
+      "tags": ["platformer"],
+      "website": "https://github.com/alicesim1/Penguin-World",
+      "cover": "https://opengraph.githubassets.com/1/alicesim1/Penguin-World",
+      "files": ["https://github.com/alicesim1/Penguin-World/releases/download/15%2F12-21/Penguin-World_V.15-12-21.-.DiagV1.SP.bin"]
+    },
+    {
+      "id": "gothicvania-snes",
+      "title": "Gothicvania (SNES)",
+      "system": "Snes",
+      "developer": "donth77",
+      "description": "Original SNES homebrew written in C with PVSnesLib.",
+      "tags": ["action", "platformer"],
+      "website": "https://github.com/donth77/snes-homebrew",
+      "cover": "https://opengraph.githubassets.com/1/donth77/snes-homebrew",
+      "files": ["https://github.com/donth77/snes-homebrew/releases/download/v1.0.0/gothicvania.sfc"]
+    },
+    {
+      "id": "snes-invaders",
+      "title": "SNES Invaders",
+      "system": "Snes",
+      "developer": "hali-coding",
+      "description": "A homebrew space shooter for the SNES.",
+      "tags": ["shooter", "arcade"],
+      "website": "https://github.com/hali-coding/megadriveinvaders",
+      "cover": "https://opengraph.githubassets.com/1/hali-coding/megadriveinvaders",
+      "files": ["https://github.com/hali-coding/megadriveinvaders/releases/download/v1.2.0/snesgame2-v1.2.0.sfc"]
+    },
+    {
+      "id": "chroma-circuit",
+      "title": "Chroma Circuit",
+      "system": "Dreamcast",
+      "developer": "richstokes",
+      "description": "A SEGA-inspired homebrew game for the Dreamcast.",
+      "tags": ["arcade"],
+      "website": "https://github.com/richstokes/dreamcast-homebrew",
+      "cover": "https://opengraph.githubassets.com/1/richstokes/dreamcast-homebrew",
+      "files": ["https://github.com/richstokes/dreamcast-homebrew/releases/download/continuous/chroma-circuit.cdi"]
+    },
+    {
+      "id": "helltaker-psp",
+      "title": "Helltaker (PSP)",
+      "system": "Psp",
+      "developer": "surelynotvain",
+      "description": "Full fan port of Helltaker and Examtaker for the PSP.",
+      "tags": ["puzzle"],
+      "website": "https://github.com/surelynotvain/helltaker-psp",
+      "cover": "https://opengraph.githubassets.com/1/surelynotvain/helltaker-psp",
+      "files": ["https://github.com/surelynotvain/helltaker-psp/releases/download/full-game-2.0/HelltakerPSP.zip"]
+    },
+    {
+      "id": "bounce-zero",
+      "title": "Bounce Zero",
+      "system": "Psp",
+      "developer": "amdray",
+      "description": "PSP port of Nokia's 2002 game Bounce.",
+      "tags": ["platformer", "classic"],
+      "website": "https://github.com/amdray/bounce_zero",
+      "cover": "https://opengraph.githubassets.com/1/amdray/bounce_zero",
+      "files": ["https://github.com/amdray/bounce_zero/releases/download/v1.1/BounceZero-v1.1.zip"]
+    },
+    {
+      "id": "tetrade",
+      "title": "Tetrade",
+      "system": "Ps1",
+      "developer": "Logan-Campbell",
+      "description": "Homebrew Tetris clone for the original PlayStation.",
+      "tags": ["puzzle"],
+      "website": "https://github.com/Logan-Campbell/Tetrade",
+      "cover": "https://opengraph.githubassets.com/1/Logan-Campbell/Tetrade",
+      "files": [
+        "https://github.com/Logan-Campbell/Tetrade/releases/download/v1.0/TETRADE_PSX.cue",
+        "https://github.com/Logan-Campbell/Tetrade/releases/download/v1.0/TETRADE_PSX.bin"
+      ]
+    }
+  ]
+}
