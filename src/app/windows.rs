@@ -237,6 +237,113 @@ impl GameShelfApp {
         }
     }
 
+    /// "Restore a backup": what goes back where, then confirm. Today's saves are
+    /// backed up first, so a restore can itself be undone.
+    pub(super) fn restore_window(&mut self, ctx: &egui::Context) {
+        let t = self.theme;
+        let Some(plan) = &self.restore_plan else {
+            return;
+        };
+        let (mut start, mut close) = (false, false);
+        egui::Window::new(RichText::new("♻  Restore a backup").strong())
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .default_width(620.0)
+            .show(ctx, |ui| {
+                let file = plan.zip.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                ui.label(RichText::new(file).strong().color(t.text));
+                ui.add_space(8.0);
+                let total: usize = plan.items.iter().map(|it| it.files).sum();
+                if plan.items.is_empty() {
+                    ui.label(
+                        RichText::new("None of these saves can go back yet: their emulators aren't set up.")
+                            .color(t.warning),
+                    );
+                } else {
+                    section_label(ui, "WILL BE RESTORED", t);
+                    egui::Grid::new("restore_items").num_columns(3).spacing(vec2(12.0, 6.0)).show(ui, |ui| {
+                        for it in &plan.items {
+                            ui.label(RichText::new(&it.name).strong().color(t.text));
+                            ui.label(RichText::new(format!("→ {}", it.target.display())).size(12.0).color(t.text_weak));
+                            ui.label(RichText::new(format!("{} file(s)", it.files)).size(12.0).color(t.gold));
+                            ui.end_row();
+                        }
+                    });
+                }
+                if !plan.skipped.is_empty() {
+                    ui.add_space(8.0);
+                    section_label(ui, "SKIPPED (EMULATOR NOT SET UP)", t);
+                    for (name, files) in &plan.skipped {
+                        ui.label(RichText::new(format!("{name}  ·  {files} file(s)")).size(12.5).color(t.warning));
+                    }
+                }
+                ui.add_space(10.0);
+                ui.label(
+                    RichText::new(
+                        "Saves in the backup replace today's copies of the same files; other files stay. \
+                         Your current saves are backed up first, so you can undo this.",
+                    )
+                    .size(12.0)
+                    .color(t.text_weak),
+                );
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+
+                    if total > 0 {
+                        let go = egui::Button::new(RichText::new(format!("Restore {total} file(s)")).strong().color(INK))
+                            .fill(t.gold)
+                            .min_size(vec2(0.0, 32.0));
+                        if ui.add(go).clicked() {
+                            start = true;
+                        }
+                    }
+                    if ui.add(egui::Button::new("Cancel").min_size(vec2(0.0, 32.0))).clicked() {
+                        close = true;
+                    }
+                });
+            });
+
+        if close {
+            self.restore_plan = None;
+        }
+        if start {
+            // Emulators rewrite their saves while running; restoring under them would be lost.
+            if let Some(open) = self
+                .emulator_exes()
+                .iter()
+                .find(|exe| controls::is_running(exe))
+            {
+                let name = open
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                self.status = format!("Close {name} first, then restore.");
+                return;
+            }
+            let Some(plan) = self.restore_plan.take() else {
+                return;
+            };
+            let sources = self.save_sources();
+            let out = self.backups_dir();
+            let (tx, rx) = channel();
+            let ctx = ctx.clone();
+            std::thread::spawn(move || {
+                let result = saves::make_backup(&sources, &out)
+                    .map_err(|e| {
+                        format!(
+                            "Could not back up today's saves first, so nothing was restored: {e}"
+                        )
+                    })
+                    .and_then(|(safety, _)| saves::restore(&plan).map(|n| (n, safety)));
+                let _ = tx.send(result);
+                ctx.request_repaint();
+            });
+            self.restore_rx = Some(rx);
+            self.status = "Restoring your saves…".into();
+        }
+    }
+
     /// The plan preview (confirm / cancel) and, while moving, a progress window.
     pub(super) fn organize_window(&mut self, ctx: &egui::Context) {
         let t = self.theme;

@@ -3,6 +3,7 @@
 
 use crate::controls;
 use crate::covers::{self, Cover, Covers, Job, Update};
+use crate::install;
 use crate::library::{now_secs, EmuConfig, Game, Library};
 use crate::organize::{self, Progress};
 use crate::platform::{Platform, ALL, GAME_EXTENSIONS, RETROARCH};
@@ -90,6 +91,12 @@ pub struct GameShelfApp {
     emu_saves: Vec<saves::EmuSaves>,
     /// A running "Back up all my saves": the zip and file count, or an error.
     backup_rx: Option<Receiver<Result<(PathBuf, usize), String>>>,
+    /// "Restore a backup": the plan waiting for confirmation, then the running restore
+    /// (files restored, and the safety backup made first).
+    restore_plan: Option<saves::RestorePlan>,
+    restore_rx: Option<Receiver<Result<(usize, PathBuf), String>>>,
+    /// An emulator being installed.
+    installing: Option<Installing>,
     /// "Organize my games": the plan waiting for confirmation…
     organize_plan: Option<organize::Plan>,
     /// …then the running move: progress messages, (done, total, current title), errors.
@@ -99,6 +106,15 @@ pub struct GameShelfApp {
     organize_errors: Vec<String>,
     status: String,
     dirty: bool,
+}
+
+/// An install in progress: messages from the installer thread, and what to show.
+struct Installing {
+    emulator: &'static str,
+    rx: Receiver<install::Msg>,
+    status: String,
+    done: u64,
+    total: Option<u64>,
 }
 
 impl GameShelfApp {
@@ -125,6 +141,9 @@ impl GameShelfApp {
             folder_info: None,
             emu_saves: Vec::new(),
             backup_rx: None,
+            restore_plan: None,
+            restore_rx: None,
+            installing: None,
             organize_plan: None,
             organize_rx: None,
             organize_progress: (0, 0, String::new()),
@@ -206,17 +225,140 @@ impl GameShelfApp {
     }
 
     fn poll_backup(&mut self) {
-        let Some(rx) = &self.backup_rx else {
+        if let Some(rx) = &self.backup_rx {
+            if let Ok(result) = rx.try_recv() {
+                self.backup_rx = None;
+                self.status = match result {
+                    Ok((zip, files)) => {
+                        format!("Backed up {files} save file(s) to {}", zip.display())
+                    }
+                    Err(e) => format!("Backup failed: {e}"),
+                };
+            }
+        }
+        if let Some(rx) = &self.restore_rx {
+            if let Ok(result) = rx.try_recv() {
+                self.restore_rx = None;
+                self.restore_plan = None;
+                self.status = match result {
+                    Ok((files, safety)) => format!(
+                        "✔ Restored {files} save file(s). Your saves from just before are kept in {}",
+                        safety.display()
+                    ),
+                    Err(e) => format!("Restore failed: {e}"),
+                };
+            }
+        }
+    }
+
+    /// Every save folder GameShelf knows about, named as in backups.
+    fn save_sources(&self) -> Vec<(String, PathBuf)> {
+        let retroarch = self
+            .retroarch_exe()
+            .as_deref()
+            .and_then(saves::retroarch_dirs);
+        saves::backup_sources(retroarch.as_ref(), &self.emu_saves)
+    }
+
+    /// Programs of every emulator that's set up (to check none is running).
+    fn emulator_exes(&self) -> Vec<PathBuf> {
+        let mut exes: Vec<PathBuf> = Vec::new();
+        for cfg in self.lib.emulators.values().filter(|c| c.is_ready()) {
+            let exe = cfg.exe_path();
+            if !exes.contains(&exe) {
+                exes.push(exe);
+            }
+        }
+        exes
+    }
+
+    /// The progress shown on an emulator's card while it installs.
+    fn install_view(&self, name: &str) -> Option<InstallView> {
+        let inst = self.installing.as_ref().filter(|i| i.emulator == name)?;
+        Some(InstallView {
+            status: inst.status.clone(),
+            fraction: inst
+                .total
+                .filter(|t| *t > 0)
+                .map(|t| (inst.done as f32 / t as f32).clamp(0.0, 1.0)),
+        })
+    }
+
+    /// Installs an emulator into `GameShelf\Emulators` (one at a time).
+    fn start_install(&mut self, name: &'static str, ctx: &egui::Context) {
+        if self.installing.is_some() {
+            self.status = "Wait for the current install to finish.".into();
+            return;
+        }
+        // No GameShelf folder yet: use Documents\GameShelf.
+        let root = match self.lib.root.clone().or_else(workspace::default_root) {
+            Some(root) => root,
+            None => {
+                self.status = "Choose a GameShelf folder in Settings first.".into();
+                return;
+            }
+        };
+        if let Err(e) = workspace::create(&root) {
+            self.status = format!("Could not create the GameShelf folder: {e}");
+            return;
+        }
+        if self.lib.root.is_none() {
+            self.lib.root = Some(root.clone());
+            self.dirty = true;
+        }
+        let (tx, rx) = channel();
+        install::install(name, root, tx, ctx.clone());
+        self.installing = Some(Installing {
+            emulator: name,
+            rx,
+            status: "Starting…".into(),
+            done: 0,
+            total: None,
+        });
+    }
+
+    fn poll_install(&mut self) {
+        let Some(inst) = &mut self.installing else {
             return;
         };
-        let Ok(result) = rx.try_recv() else {
+        let mut finished = None;
+        for msg in inst.rx.try_iter() {
+            match msg {
+                install::Msg::Status(s) => inst.status = s,
+                install::Msg::Progress { done, total } => {
+                    inst.done = done;
+                    inst.total = total;
+                    let mb = |b: u64| b as f64 / (1024.0 * 1024.0);
+                    inst.status = match total {
+                        Some(t) => format!("Downloading… {:.0} of {:.0} MB", mb(done), mb(t)),
+                        None => format!("Downloading… {:.0} MB", mb(done)),
+                    };
+                }
+                install::Msg::Done(result) => finished = Some(result),
+            }
+        }
+        let Some(result) = finished else {
             return;
         };
-        self.backup_rx = None;
-        self.status = match result {
-            Ok((zip, files)) => format!("Backed up {files} save file(s) to {}", zip.display()),
-            Err(e) => format!("Backup failed: {e}"),
-        };
+        let name = inst.emulator;
+        self.installing = None;
+        match result {
+            Ok(exe) => {
+                for p in ALL {
+                    if p.emulator().is_some_and(|i| i.name == name) {
+                        self.lib.emulators.entry(p).or_default().exe = exe.display().to_string();
+                    }
+                }
+                self.dirty = true;
+                self.folder_info = None;
+                self.status = if name == RETROARCH {
+                    "✔ RetroArch is installed. Get cores in RetroArch: Online Updater › Core Downloader.".into()
+                } else {
+                    format!("✔ {name} is installed and ready.")
+                };
+            }
+            Err(e) => self.status = format!("Could not install {name}: {e}"),
+        }
     }
 
     fn game_by_path(&mut self, key: &Path) -> Option<&mut Game> {
@@ -487,6 +629,8 @@ impl eframe::App for GameShelfApp {
         self.handle_cover_updates(ctx);
         self.poll_organize();
         self.poll_backup();
+        self.poll_install();
+        self.restore_window(ctx);
         self.organize_window(ctx);
         self.controls_window(ctx);
 

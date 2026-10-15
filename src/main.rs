@@ -5,6 +5,7 @@ mod app;
 mod controls;
 mod covers;
 mod emukeys;
+mod install;
 mod library;
 mod organize;
 mod platform;

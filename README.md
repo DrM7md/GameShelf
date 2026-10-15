@@ -12,8 +12,11 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
   favorites, search, sorting and a per-system sidebar.
 - **Add games** by file, folder, or drag and drop. The system is detected from the file
   (extension, disc header) or from the folder it's in (`Games\PlayStation 2\…`).
-- **Emulators** screen: the recommended emulator per system, download links, and status
-  (RetroArch cores included).
+- **Emulators** screen: the recommended emulator per system, its status (RetroArch cores
+  included), and **Install**: GameShelf downloads the latest official Windows build
+  (GitHub releases, ppsspp.org, buildbot.libretro.com), unpacks it into
+  `Emulators\<name>` and sets it up. Dolphin's site doesn't allow automated downloads,
+  so for Dolphin it opens the download page.
 - **GameShelf folder** (`Games\<System>`, `Emulators`, `BIOS`): new games and emulators
   dropped in are picked up automatically.
 - **Organize my games**: moves every game into its system folder, after showing the plan.
@@ -28,6 +31,8 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
 - **All your progress**: the memory cards and saves of every standalone emulator are
   linked into `Saves\<emulator>` and `States\<emulator>` (Windows junctions: nothing is
   moved or changed), and "Back up all my saves" zips everything into `GameShelf\Backups`.
+  "Restore a backup" shows what goes back where, backs up today's saves first, then restores.
+- Burgundy, gold and beige theme, in dark and light.
 
 ## Code layout
 
@@ -43,10 +48,10 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
 | `src/covers.rs` | Box art download and cache |
 | `src/workspace.rs`, `organize.rs` | GameShelf folder and Organize my games |
 | `src/controls.rs`, `emukeys.rs` | Controls guide and key changing per emulator |
-| `src/saves.rs` | Save folders, links and backups |
+| `src/saves.rs` | Save folders, links, backups and restore |
+| `src/install.rs` | Installing emulators |
 
 Ideas for later are in [BACKLOG.md](BACKLOG.md).
-- Burgundy, gold and beige theme, in dark and light.
 
 ## Build
 

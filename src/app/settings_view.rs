@@ -460,6 +460,15 @@ impl GameShelfApp {
                     {
                         act = Some(ProgressAct::Backup);
                     }
+                    let restore = egui::Button::new(RichText::new("♻ Restore a backup…").color(t.text))
+                        .min_size(vec2(0.0, 30.0));
+                    if ui
+                        .add_enabled(!backing_up && self.restore_rx.is_none(), restore)
+                        .on_hover_text("Put the saves from a GameShelf backup .zip back. You'll see what goes where first.")
+                        .clicked()
+                    {
+                        act = Some(ProgressAct::Restore);
+                    }
                     if backing_up {
                         ui.spinner();
                         ui.label(RichText::new("Backing up…").color(t.text_weak));
@@ -483,6 +492,18 @@ impl GameShelfApp {
                 let _ = std::fs::create_dir_all(&path);
                 if let Err(e) = workspace::open_folder(&path) {
                     self.status = e;
+                }
+            }
+            Some(ProgressAct::Restore) => {
+                let picked = rfd::FileDialog::new()
+                    .set_directory(self.backups_dir())
+                    .add_filter("GameShelf backup", &["zip"])
+                    .pick_file();
+                if let Some(zip) = picked {
+                    match saves::plan_restore(&zip, &self.save_sources()) {
+                        Ok(plan) => self.restore_plan = Some(plan),
+                        Err(e) => self.status = e,
+                    }
                 }
             }
             Some(ProgressAct::LinkAll) => {
@@ -518,7 +539,7 @@ impl GameShelfApp {
     }
 
     /// `GameShelf\Backups`, or `Documents\GameShelf Backups` without a GameShelf folder.
-    fn backups_dir(&self) -> PathBuf {
+    pub(super) fn backups_dir(&self) -> PathBuf {
         match &self.lib.root {
             Some(root) => root.join("Backups"),
             None => workspace::default_root()
@@ -641,6 +662,7 @@ pub(super) enum SaveAct {
 enum ProgressAct {
     LinkAll,
     Backup,
+    Restore,
     Open(PathBuf),
 }
 

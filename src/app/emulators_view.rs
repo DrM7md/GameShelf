@@ -64,6 +64,7 @@ impl GameShelfApp {
         }
 
         let mut changed = false;
+        let mut install_request: Option<&'static str> = None;
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
@@ -72,10 +73,21 @@ impl GameShelfApp {
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = GAP;
                         for (name, systems) in row {
-                            match emulator_tile(ui, t, cell, name, systems, &mut self.lib) {
+                            let progress = self.install_view(name);
+                            let tile = emulator_tile(
+                                ui,
+                                t,
+                                cell,
+                                name,
+                                systems,
+                                &mut self.lib,
+                                progress.as_ref(),
+                            );
+                            match tile {
                                 TileAction::Changed => changed = true,
                                 TileAction::OpenSettings => self.editing = Some(name),
                                 TileAction::ShowControls => self.controls_for = Some(name),
+                                TileAction::Install => install_request = Some(*name),
                                 TileAction::None => {}
                             }
                         }
@@ -83,6 +95,9 @@ impl GameShelfApp {
                     ui.add_space(GAP);
                 }
             });
+        if let Some(name) = install_request {
+            self.start_install(name, ui.ctx());
+        }
         if let Some(name) = self.editing {
             let systems: Vec<Platform> = ALL
                 .into_iter()
@@ -122,6 +137,14 @@ pub(super) enum TileAction {
     Changed,
     OpenSettings,
     ShowControls,
+    Install,
+}
+
+/// What an emulator card shows while that emulator is being installed.
+pub(super) struct InstallView {
+    pub(super) status: String,
+    /// Download progress (0–1), when the size is known.
+    pub(super) fraction: Option<f32>,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -139,6 +162,7 @@ pub(super) fn emulator_tile(
     name: &str,
     systems: &[Platform],
     lib: &mut Library,
+    installing: Option<&InstallView>,
 ) -> TileAction {
     let (Some(&first), Some(info)) = (systems.first(), systems.first().and_then(|p| p.emulator()))
     else {
@@ -239,7 +263,13 @@ pub(super) fn emulator_tile(
                                 .color(t.warning),
                             );
                         }
-                        if ready {
+                        if let Some(iv) = installing {
+                            let bar = egui::ProgressBar::new(iv.fraction.unwrap_or(0.0))
+                                .fill(BURGUNDY)
+                                .desired_height(10.0);
+                            ui.add(if iv.fraction.is_some() { bar } else { bar.animate(true) });
+                            ui.label(RichText::new(&iv.status).size(12.0).color(t.text));
+                        } else if ready {
                             ui.add(
                                 egui::Label::new(
                                     RichText::new(format!("📂  {exe}"))
@@ -273,8 +303,30 @@ pub(super) fn emulator_tile(
                 ui.add_space(free.max(8.0));
                     ui.horizontal(|ui| {
                         ui.add_space(14.0);
+                        // Nothing to click while this emulator is being installed.
+                        if installing.is_some() {
+                            ui.disable();
+                        }
+                        // Not set up yet and GameShelf can fetch it: Install is the main button.
+                        let offer_install = !ready && install::can_install(name);
+                        if offer_install {
+                            let install = egui::Button::new(
+                                RichText::new("⬇ Install").strong().color(INK),
+                            )
+                            .fill(t.gold)
+                            .min_size(vec2(96.0, 32.0));
+                            if ui
+                                .add(install)
+                                .on_hover_text(
+                                    "Download the latest official build and set it up in your GameShelf folder",
+                                )
+                                .clicked()
+                            {
+                                action = TileAction::Install;
+                            }
+                        }
                         let choose_label = if ready { "Change .exe" } else { "Choose .exe" };
-                        let (fill, color) = if ready {
+                        let (fill, color) = if ready || offer_install {
                             (t.button, t.text)
                         } else {
                             (t.gold, INK)
@@ -295,10 +347,16 @@ pub(super) fn emulator_tile(
                                 action = TileAction::Changed;
                             }
                         }
-                        let download = egui::Button::new(RichText::new("⬇ Download").color(t.text))
+                        // The website stays one click away (as 🌐 when Install takes the room).
+                        let web_label = if offer_install { "🌐" } else { "⬇ Download" };
+                        let download = egui::Button::new(RichText::new(web_label).color(t.text))
                             .fill(t.button)
-                            .min_size(vec2(0.0, 32.0));
-                        if ui.add(download).on_hover_text(info.url).clicked() {
+                            .min_size(vec2(if offer_install { 36.0 } else { 0.0 }, 32.0));
+                        if ui
+                            .add(download)
+                            .on_hover_text(format!("Open the download page: {}", info.url))
+                            .clicked()
+                        {
                             ui.ctx().open_url(egui::OpenUrl::new_tab(info.url));
                         }
                         let gear = egui::Button::new(RichText::new("⚙").size(16.0).color(t.text))

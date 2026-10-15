@@ -510,9 +510,155 @@ fn timestamp() -> String {
     format!("{y:04}-{mo:02}-{d:02} {h:02}{m:02}")
 }
 
+// ---------------------------------------------------------------------------
+// Restore: put a backup zip back where each emulator keeps its saves today.
+// ---------------------------------------------------------------------------
+
+/// One folder of the backup and where it goes back to.
+pub struct RestoreItem {
+    pub name: String,
+    pub target: PathBuf,
+    pub files: usize,
+}
+
+pub struct RestorePlan {
+    pub zip: PathBuf,
+    pub items: Vec<RestoreItem>,
+    /// Backup folders with no matching emulator set up now (name, file count).
+    pub skipped: Vec<(String, usize)>,
+}
+
+/// The backup folder (e.g. `RetroArch/Saves`) an entry belongs to, and the rest of its path.
+fn split_entry(entry: &Path) -> Option<(String, PathBuf)> {
+    let parts: Vec<String> = entry
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect();
+    // `Emulator/Folder name/rest…`
+    let (emu, folder) = (parts.first()?, parts.get(1)?);
+    let name = format!("{emu}/{folder}");
+    let rest: PathBuf = parts.iter().skip(2).collect();
+    (rest.components().count() > 0).then_some((name, rest))
+}
+
+/// Reads a backup and matches each of its folders to today's save folders.
+pub fn plan_restore(zip_path: &Path, sources: &[(String, PathBuf)]) -> Result<RestorePlan, String> {
+    let file = fs::File::open(zip_path).map_err(|e| e.to_string())?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Not a GameShelf backup: {e}"))?;
+    let mut items: Vec<RestoreItem> = Vec::new();
+    let mut skipped: Vec<(String, usize)> = Vec::new();
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(path) = entry.enclosed_name() else {
+            continue;
+        };
+        let Some((name, _)) = split_entry(&path) else {
+            continue;
+        };
+        match sources.iter().find(|(n, _)| *n == name) {
+            Some((_, target)) => match items.iter_mut().find(|it| it.name == name) {
+                Some(it) => it.files += 1,
+                None => items.push(RestoreItem {
+                    name,
+                    target: target.clone(),
+                    files: 1,
+                }),
+            },
+            None => match skipped.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, count)) => *count += 1,
+                None => skipped.push((name, 1)),
+            },
+        }
+    }
+    if items.is_empty() && skipped.is_empty() {
+        return Err("This zip doesn't look like a GameShelf backup.".into());
+    }
+    Ok(RestorePlan {
+        zip: zip_path.to_path_buf(),
+        items,
+        skipped,
+    })
+}
+
+/// Writes the planned folders back. Files in the backup replace the current ones;
+/// other current files are left alone. Returns how many files were restored.
+pub fn restore(plan: &RestorePlan) -> Result<usize, String> {
+    let file = fs::File::open(&plan.zip).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let mut restored = 0;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        if entry.is_dir() {
+            continue;
+        }
+        // `enclosed_name` rejects `..` and absolute paths, so nothing escapes the target.
+        let Some(path) = entry.enclosed_name() else {
+            continue;
+        };
+        let Some((name, rest)) = split_entry(&path) else {
+            continue;
+        };
+        let Some(item) = plan.items.iter().find(|it| it.name == name) else {
+            continue;
+        };
+        let dest = item.target.join(&rest);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let tmp = dest.with_file_name(format!(
+            "{}.gameshelf-restore",
+            dest.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        ));
+        let mut out = fs::File::create(&tmp).map_err(|e| format!("{}: {e}", dest.display()))?;
+        std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
+        drop(out);
+        fs::rename(&tmp, &dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+        restored += 1;
+    }
+    Ok(restored)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backup_then_restore_brings_saves_back() {
+        let base = std::env::temp_dir().join(format!("gameshelf-restore-{}", std::process::id()));
+        let saves = base.join("saves");
+        fs::create_dir_all(saves.join("mGBA")).unwrap();
+        fs::write(saves.join("mGBA/Game.srm"), b"old progress").unwrap();
+        let sources = vec![("RetroArch/Saves".to_string(), saves.clone())];
+        let (zip_path, _) = make_backup(&sources, &base.join("Backups")).unwrap();
+
+        // Progress gets lost or overwritten…
+        fs::write(saves.join("mGBA/Game.srm"), b"broken").unwrap();
+        fs::write(saves.join("mGBA/Other.srm"), b"keep me").unwrap();
+
+        // …and a backup for an emulator that isn't set up any more is reported, not written.
+        let plan = plan_restore(&zip_path, &sources).unwrap();
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].files, 1);
+        assert!(plan.skipped.is_empty());
+        assert_eq!(restore(&plan).unwrap(), 1);
+        assert_eq!(
+            fs::read(saves.join("mGBA/Game.srm")).unwrap(),
+            b"old progress"
+        );
+        assert_eq!(fs::read(saves.join("mGBA/Other.srm")).unwrap(), b"keep me");
+
+        let none: Vec<(String, PathBuf)> = Vec::new();
+        let plan = plan_restore(&zip_path, &none).unwrap();
+        assert!(plan.items.is_empty());
+        assert_eq!(plan.skipped, vec![("RetroArch/Saves".to_string(), 1)]);
+        fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn finds_links_and_backs_up_standalone_saves() {
