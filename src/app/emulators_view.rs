@@ -126,9 +126,14 @@ impl GameShelfApp {
 /// Narrowest an emulator card may get before the grid drops a column.
 pub(super) const TILE_MIN: f32 = 300.0;
 
-pub(super) const TILE_HEIGHT: f32 = 260.0;
+pub(super) const TILE_HEIGHT: f32 = 296.0;
 
-pub(super) const BUTTON_ROW: f32 = 32.0;
+pub(super) const BUTTON_HEIGHT: f32 = 32.0;
+
+pub(super) const BUTTON_GAP: f32 = 8.0;
+
+/// Both button rows: tools, then the main buttons.
+pub(super) const BUTTON_ROWS: f32 = BUTTON_HEIGHT * 2.0 + BUTTON_GAP;
 
 pub(super) const TILE_BOTTOM_MARGIN: f32 = 16.0;
 
@@ -295,83 +300,108 @@ pub(super) fn emulator_tile(
                         }
                     });
 
-                // Buttons sit near the bottom, with a margin under them.
+                // Buttons sit near the bottom, with a margin under them: a row of small
+                // tool icons, then the two main buttons sharing the card's width.
                 let free = card_top + TILE_HEIGHT
-                    - BUTTON_ROW
+                    - BUTTON_ROWS
                     - TILE_BOTTOM_MARGIN
                     - ui.cursor().top();
                 ui.add_space(free.max(8.0));
-                    ui.horizontal(|ui| {
-                        ui.add_space(14.0);
-                        // Nothing to click while this emulator is being installed.
-                        if installing.is_some() {
-                            ui.disable();
-                        }
-                        // Not set up yet and GameShelf can fetch it: Install is the main button.
-                        let offer_install = !ready && install::can_install(name);
-                        if offer_install {
-                            let install = egui::Button::new(
-                                RichText::new("⬇ Install").strong().color(INK),
-                            )
-                            .fill(t.gold)
-                            .min_size(vec2(96.0, 32.0));
-                            if ui
-                                .add(install)
-                                .on_hover_text(
-                                    "Download the latest official build and set it up in your GameShelf folder",
-                                )
-                                .clicked()
-                            {
-                                action = TileAction::Install;
+                let inner = tile_width - 28.0;
+                // Not set up yet and GameShelf can fetch it: Install is the main button.
+                let offer_install = !ready && install::can_install(name);
+                let busy = installing.is_some();
+
+                // Tools, right-aligned: (🌐) ⚙ 🎮
+                ui.horizontal(|ui| {
+                    ui.add_space(14.0);
+                    ui.allocate_ui_with_layout(
+                        vec2(inner, BUTTON_HEIGHT),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if busy {
+                                ui.disable();
                             }
+                            let icon = |glyph: &str| {
+                                egui::Button::new(RichText::new(glyph).size(16.0).color(t.text))
+                                    .fill(t.button)
+                                    .min_size(vec2(36.0, BUTTON_HEIGHT))
+                            };
+                            if ui.add(icon("🎮")).on_hover_text("Controls").clicked() {
+                                action = TileAction::ShowControls;
+                            }
+                            if ui.add(icon("⚙")).on_hover_text("Settings").clicked() {
+                                action = TileAction::OpenSettings;
+                            }
+                            // With Install as a main button, the website moves up here.
+                            if offer_install
+                                && ui
+                                    .add(icon("🌐"))
+                                    .on_hover_text(format!("Open the download page: {}", info.url))
+                                    .clicked()
+                            {
+                                ui.ctx().open_url(egui::OpenUrl::new_tab(info.url));
+                            }
+                        },
+                    );
+                });
+                ui.add_space(BUTTON_GAP);
+
+                // Main buttons: [Install | Choose .exe], [Choose .exe | Download] or
+                // [Change .exe | Download], each half of the card.
+                ui.horizontal(|ui| {
+                    ui.add_space(14.0);
+                    if busy {
+                        ui.disable();
+                    }
+                    let half = (inner - ui.spacing().item_spacing.x) / 2.0;
+                    let button = |label: &str, primary: bool| {
+                        let (fill, color) = if primary { (t.gold, INK) } else { (t.button, t.text) };
+                        egui::Button::new(RichText::new(label).strong().color(color))
+                            .fill(fill)
+                            .min_size(vec2(half, BUTTON_HEIGHT))
+                    };
+                    let mut choose_exe = |ui: &mut egui::Ui, primary: bool| -> bool {
+                        let label = if ready { "Change .exe" } else { "Choose .exe" };
+                        if !ui.add(button(label, primary)).clicked() {
+                            return false;
                         }
-                        let choose_label = if ready { "Change .exe" } else { "Choose .exe" };
-                        let (fill, color) = if ready || offer_install {
-                            (t.button, t.text)
-                        } else {
-                            (t.gold, INK)
+                        let Some(f) = rfd::FileDialog::new().add_filter("Program", &["exe"]).pick_file()
+                        else {
+                            return false;
                         };
-                        let choose =
-                            egui::Button::new(RichText::new(choose_label).strong().color(color))
-                                .fill(fill)
-                                .min_size(vec2(112.0, 32.0));
-                        if ui.add(choose).clicked() {
-                            if let Some(f) = rfd::FileDialog::new()
-                                .add_filter("Program", &["exe"])
-                                .pick_file()
-                            {
-                                let path = f.display().to_string();
-                                for p in systems {
-                                    lib.emulators.entry(*p).or_default().exe = path.clone();
-                                }
-                                action = TileAction::Changed;
-                            }
+                        let path = f.display().to_string();
+                        for p in systems {
+                            lib.emulators.entry(*p).or_default().exe = path.clone();
                         }
-                        // The website stays one click away (as 🌐 when Install takes the room).
-                        let web_label = if offer_install { "🌐" } else { "⬇ Download" };
-                        let download = egui::Button::new(RichText::new(web_label).color(t.text))
-                            .fill(t.button)
-                            .min_size(vec2(if offer_install { 36.0 } else { 0.0 }, 32.0));
+                        true
+                    };
+                    if offer_install {
                         if ui
-                            .add(download)
+                            .add(button("⬇ Install", true))
+                            .on_hover_text(
+                                "Download the latest official build and set it up in your GameShelf folder",
+                            )
+                            .clicked()
+                        {
+                            action = TileAction::Install;
+                        }
+                        if choose_exe(ui, false) {
+                            action = TileAction::Changed;
+                        }
+                    } else {
+                        if choose_exe(ui, !ready) {
+                            action = TileAction::Changed;
+                        }
+                        if ui
+                            .add(button("⬇ Download", false))
                             .on_hover_text(format!("Open the download page: {}", info.url))
                             .clicked()
                         {
                             ui.ctx().open_url(egui::OpenUrl::new_tab(info.url));
                         }
-                        let gear = egui::Button::new(RichText::new("⚙").size(16.0).color(t.text))
-                            .fill(t.button)
-                            .min_size(vec2(36.0, 32.0));
-                        if ui.add(gear).on_hover_text("Settings").clicked() {
-                            action = TileAction::OpenSettings;
-                        }
-                        let pad = egui::Button::new(RichText::new("🎮").size(16.0).color(t.text))
-                            .fill(t.button)
-                            .min_size(vec2(36.0, 32.0));
-                        if ui.add(pad).on_hover_text("Controls").clicked() {
-                            action = TileAction::ShowControls;
-                        }
-                    });
+                    }
+                });
                 // A real allocation (not just a gap) so the card always ends below it.
                 ui.allocate_space(vec2(1.0, TILE_BOTTOM_MARGIN));
             });
