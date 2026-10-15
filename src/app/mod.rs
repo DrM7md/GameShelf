@@ -17,18 +17,21 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
 mod emulators_view;
+mod freegames_view;
 mod library_view;
 mod settings_view;
 mod widgets;
 mod windows;
 
 use emulators_view::*;
+use freegames_view::FreeState;
 use widgets::*;
 
 #[derive(PartialEq, Clone, Copy)]
 enum Tab {
     Library,
     Emulators,
+    FreeGames,
     Settings,
 }
 
@@ -80,6 +83,8 @@ pub struct GameShelfApp {
     emu_filter: EmuFilter,
     /// Emulator whose settings window is open.
     editing: Option<&'static str>,
+    /// The Free games tab: catalogs, search, downloads.
+    free: FreeState,
     /// Emulator whose controls window is open.
     controls_for: Option<&'static str>,
     /// The RetroArch setting waiting for a new key, and the last result to show.
@@ -135,6 +140,7 @@ impl GameShelfApp {
             favorites_only: false,
             emu_filter: EmuFilter::All,
             editing: None,
+            free: FreeState::new(),
             controls_for: None,
             listening: None,
             controls_note: None,
@@ -515,6 +521,9 @@ impl GameShelfApp {
             if header_tab(ui, "Emulators", self.tab == Tab::Emulators, t.gold) {
                 self.tab = Tab::Emulators;
             }
+            if header_tab(ui, "Free games", self.tab == Tab::FreeGames, t.gold) {
+                self.tab = Tab::FreeGames;
+            }
             ui.add_space(24.0);
             let add =
                 egui::Button::new(RichText::new("➕  Add games").strong().color(INK)).fill(t.gold);
@@ -630,6 +639,7 @@ impl eframe::App for GameShelfApp {
         self.poll_organize();
         self.poll_backup();
         self.poll_install();
+        self.poll_free_games();
         self.restore_window(ctx);
         self.organize_window(ctx);
         self.controls_window(ctx);
@@ -671,6 +681,7 @@ impl eframe::App for GameShelfApp {
             .show(ctx, |ui| match self.tab {
                 Tab::Library => self.library_tab(ui),
                 Tab::Emulators => self.emulators_tab(ui),
+                Tab::FreeGames => self.free_games_tab(ui),
                 Tab::Settings => self.settings_tab(ui),
             });
 

@@ -16,6 +16,8 @@ pub enum Platform {
     Nes,
     Snes,
     N64,
+    Gb,
+    Gbc,
     Gba,
     Nds,
     Genesis,
@@ -23,7 +25,7 @@ pub enum Platform {
     Unknown,
 }
 
-pub const ALL: [Platform; 13] = [
+pub const ALL: [Platform; 15] = [
     Platform::Ps1,
     Platform::Ps2,
     Platform::Ps3,
@@ -32,6 +34,8 @@ pub const ALL: [Platform; 13] = [
     Platform::Nes,
     Platform::Snes,
     Platform::N64,
+    Platform::Gb,
+    Platform::Gbc,
     Platform::Gba,
     Platform::Nds,
     Platform::Genesis,
@@ -42,7 +46,7 @@ pub const ALL: [Platform; 13] = [
 /// Extensions offered in the "Add games" dialog.
 pub const GAME_EXTENSIONS: &[&str] = &[
     "iso", "cue", "bin", "chd", "pbp", "cso", "gcm", "rvz", "gcz", "ciso", "nes", "sfc", "smc",
-    "n64", "z64", "v64", "gba", "nds", "md", "gen", "smd", "gdi", "cdi",
+    "n64", "z64", "v64", "gb", "gbc", "gba", "nds", "md", "gen", "smd", "gdi", "cdi",
 ];
 
 pub const RETROARCH: &str = "RetroArch";
@@ -68,6 +72,8 @@ impl Platform {
             Platform::Nes => "NES",
             Platform::Snes => "Super Nintendo",
             Platform::N64 => "Nintendo 64",
+            Platform::Gb => "Game Boy",
+            Platform::Gbc => "Game Boy Color",
             Platform::Gba => "Game Boy Advance",
             Platform::Nds => "Nintendo DS",
             Platform::Genesis => "Sega Genesis",
@@ -86,6 +92,8 @@ impl Platform {
             Platform::Nes => "NES",
             Platform::Snes => "SNES",
             Platform::N64 => "N64",
+            Platform::Gb => "GB",
+            Platform::Gbc => "GBC",
             Platform::Gba => "GBA",
             Platform::Nds => "NDS",
             Platform::Genesis => "MD",
@@ -104,6 +112,8 @@ impl Platform {
             Platform::Nes => Color32::from_rgb(220, 70, 60),
             Platform::Snes => Color32::from_rgb(170, 130, 230),
             Platform::N64 => Color32::from_rgb(60, 170, 90),
+            Platform::Gb => Color32::from_rgb(140, 160, 70),
+            Platform::Gbc => Color32::from_rgb(230, 190, 40),
             Platform::Gba => Color32::from_rgb(95, 85, 200),
             Platform::Nds => Color32::from_rgb(200, 200, 210),
             Platform::Genesis => Color32::from_rgb(230, 150, 40),
@@ -167,6 +177,9 @@ impl Platform {
             Platform::Nes => retroarch(r"-L cores\fceumm_libretro.dll {rom}"),
             Platform::Snes => retroarch(r"-L cores\snes9x_libretro.dll {rom}"),
             Platform::N64 => retroarch(r"-L cores\mupen64plus_next_libretro.dll {rom}"),
+            // mGBA runs Game Boy and Game Boy Color too.
+            Platform::Gb => retroarch(r"-L cores\mgba_libretro.dll {rom}"),
+            Platform::Gbc => retroarch(r"-L cores\mgba_libretro.dll {rom}"),
             Platform::Gba => retroarch(r"-L cores\mgba_libretro.dll {rom}"),
             Platform::Nds => retroarch(r"-L cores\melonds_libretro.dll {rom}"),
             Platform::Genesis => retroarch(r"-L cores\genesis_plus_gx_libretro.dll {rom}"),
@@ -185,6 +198,8 @@ impl Platform {
             Platform::Nes => &["nes", "famicom", "nintendo entertainment system"],
             Platform::Snes => &["snes", "super nintendo", "super famicom", "sfc"],
             Platform::N64 => &["n64", "nintendo 64"],
+            Platform::Gb => &["gb", "game boy", "gameboy"],
+            Platform::Gbc => &["gbc", "game boy color", "gameboy color"],
             Platform::Gba => &["gba", "game boy advance", "gameboy advance"],
             Platform::Nds => &["nds", "ds", "nintendo ds"],
             Platform::Genesis => &["sega genesis", "genesis", "mega drive", "megadrive", "md"],
@@ -237,6 +252,8 @@ pub fn detect(path: &Path) -> Option<Platform> {
         "nes" => Platform::Nes,
         "sfc" | "smc" => Platform::Snes,
         "n64" | "z64" | "v64" => Platform::N64,
+        "gb" => Platform::Gb,
+        "gbc" => Platform::Gbc,
         "gba" => Platform::Gba,
         "nds" => Platform::Nds,
         "md" | "gen" | "smd" => Platform::Genesis,

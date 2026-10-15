@@ -5,6 +5,7 @@ mod app;
 mod controls;
 mod covers;
 mod emukeys;
+mod freegames;
 mod install;
 mod library;
 mod organize;

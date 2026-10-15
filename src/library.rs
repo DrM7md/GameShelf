@@ -128,6 +128,30 @@ impl Library {
                 });
             }
         }
+        // Systems added in a newer GameShelf share an emulator that's already set up
+        // (e.g. Game Boy uses the same RetroArch as Game Boy Advance).
+        for p in ALL {
+            let Some(name) = p.emulator().map(|i| i.name) else {
+                continue;
+            };
+            if lib.emulator_ready(p) {
+                continue;
+            }
+            let shared = ALL
+                .into_iter()
+                .filter(|o| o.emulator().is_some_and(|i| i.name == name))
+                .find_map(|o| {
+                    lib.emulators
+                        .get(&o)
+                        .filter(|c| c.is_ready())
+                        .map(|c| c.exe.clone())
+                });
+            if let (Some(exe), Some(cfg)) = (shared, lib.emulators.get_mut(&p)) {
+                if cfg.exe.trim().is_empty() {
+                    cfg.exe = exe;
+                }
+            }
+        }
         (lib, warning)
     }
 

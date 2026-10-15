@@ -17,6 +17,10 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
   (GitHub releases, ppsspp.org, buildbot.libretro.com), unpacks it into
   `Emulators\<name>` and sets it up. Dolphin's site doesn't allow automated downloads,
   so for Dolphin it opens the download page.
+- **Free games**: browse homebrew that its makers share for free on
+  [Homebrew Hub](https://hh.gbdev.io) (Game Boy, Game Boy Color, Game Boy Advance, NES),
+  search by title, maker or tag, and **Get** downloads a game into its system folder and
+  adds it to the library with its picture.
 - **GameShelf folder** (`Games\<System>`, `Emulators`, `BIOS`): new games and emulators
   dropped in are picked up automatically.
 - **Organize my games**: moves every game into its system folder, after showing the plan.
@@ -50,6 +54,7 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
 | `src/controls.rs`, `emukeys.rs` | Controls guide and key changing per emulator |
 | `src/saves.rs` | Save folders, links, backups and restore |
 | `src/install.rs` | Installing emulators |
+| `src/freegames.rs`, `app/freegames_view.rs` | Free games from Homebrew Hub |
 
 Ideas for later are in [BACKLOG.md](BACKLOG.md).
 

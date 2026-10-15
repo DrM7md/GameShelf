@@ -400,6 +400,27 @@ pub(super) fn game_card(
 }
 
 pub(super) fn draw_cover(ui: &egui::Ui, t: Theme, game: &Game, cover: Option<&Cover>, area: Rect) {
+    draw_art(
+        ui,
+        t,
+        &game.title,
+        game.platform,
+        game.favorite,
+        cover,
+        area,
+    );
+}
+
+/// Box art (or a placeholder with the initials), the system badge and a favorite star.
+pub(super) fn draw_art(
+    ui: &egui::Ui,
+    t: Theme,
+    title: &str,
+    platform: Platform,
+    favorite: bool,
+    cover: Option<&Cover>,
+    area: Rect,
+) {
     let painter = ui.painter();
     painter.rect_filled(area, 8.0, t.cover_bg);
     match cover {
@@ -424,7 +445,7 @@ pub(super) fn draw_cover(ui: &egui::Ui, t: Theme, game: &Game, cover: Option<&Co
             painter.text(
                 area.center(),
                 Align2::CENTER_CENTER,
-                initials(&game.title),
+                initials(title),
                 FontId::proportional(44.0),
                 t.gold,
             );
@@ -441,7 +462,7 @@ pub(super) fn draw_cover(ui: &egui::Ui, t: Theme, game: &Game, cover: Option<&Co
     }
     // System badge.
     let galley = painter.layout_no_wrap(
-        game.platform.short().to_string(),
+        platform.short().to_string(),
         FontId::proportional(11.5),
         Color32::WHITE,
     );
@@ -449,9 +470,9 @@ pub(super) fn draw_cover(ui: &egui::Ui, t: Theme, game: &Game, cover: Option<&Co
         area.left_top() + vec2(8.0, 8.0),
         galley.size() + vec2(12.0, 6.0),
     );
-    painter.rect_filled(badge, 6.0, game.platform.color().gamma_multiply(0.9));
+    painter.rect_filled(badge, 6.0, platform.color().gamma_multiply(0.9));
     painter.galley(badge.min + vec2(6.0, 3.0), galley, Color32::WHITE);
-    if game.favorite {
+    if favorite {
         painter.text(
             area.right_top() + vec2(-10.0, 8.0),
             Align2::RIGHT_TOP,

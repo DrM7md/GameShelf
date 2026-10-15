@@ -25,12 +25,19 @@ pub enum Job {
         title: String,
         save_to: PathBuf,
     },
+    /// An image from a known address, kept in `save_to` so it's fetched only once
+    /// (Free games covers).
+    Url {
+        key: PathBuf,
+        url: String,
+        save_to: PathBuf,
+    },
 }
 
 impl Job {
     fn key(&self) -> &Path {
         match self {
-            Job::Load { key, .. } | Job::Fetch { key, .. } => key,
+            Job::Load { key, .. } | Job::Fetch { key, .. } | Job::Url { key, .. } => key,
         }
     }
 }
@@ -169,6 +176,34 @@ fn worker(jobs: Receiver<Job>, done: Sender<Done>, ctx: egui::Context) {
                     None => Done::Missing { key, fetched: true },
                 }
             }
+            Job::Url { key, url, save_to } => {
+                let cached = decode_file(&save_to);
+                let image = cached.or_else(|| {
+                    let resp = agent.get(&url).call().ok()?;
+                    let mut bytes = Vec::new();
+                    resp.into_reader()
+                        .take(MAX_IMAGE_BYTES)
+                        .read_to_end(&mut bytes)
+                        .ok()?;
+                    let image = decode(&bytes)?;
+                    if let Some(dir) = save_to.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    let _ = std::fs::write(&save_to, &bytes);
+                    Some(image)
+                });
+                match image {
+                    Some(image) => Done::Ready {
+                        key,
+                        fetched: None,
+                        image,
+                    },
+                    None => Done::Missing {
+                        key,
+                        fetched: false,
+                    },
+                }
+            }
         };
         if done.send(result).is_err() {
             break;
@@ -210,6 +245,8 @@ fn system_folder(platform: Platform) -> Option<&'static str> {
         Platform::Nes => "Nintendo - Nintendo Entertainment System",
         Platform::Snes => "Nintendo - Super Nintendo Entertainment System",
         Platform::N64 => "Nintendo - Nintendo 64",
+        Platform::Gb => "Nintendo - Game Boy",
+        Platform::Gbc => "Nintendo - Game Boy Color",
         Platform::Gba => "Nintendo - Game Boy Advance",
         Platform::Nds => "Nintendo - Nintendo DS",
         Platform::Genesis => "Sega - Mega Drive - Genesis",
