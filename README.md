@@ -8,6 +8,8 @@ right emulator (RetroArch, DuckStation, PCSX2, RPCS3, PPSSPP, Dolphin, Flycast).
 
 ## Features
 
+- **Guide**: a Getting started checklist that turns green as you go (folder, emulator,
+  games, play, backup), how every part works, and common fixes. Opens on first start.
 - **Library** of game cards with box art (from [libretro-thumbnails](https://github.com/libretro-thumbnails/libretro-thumbnails)),
   favorites, search, sorting and a per-system sidebar.
 - **Add games** by file, folder, or drag and drop. The system is detected from the file
