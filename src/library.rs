@@ -68,6 +68,9 @@ pub struct Library {
     pub free_list_url: String,
     #[serde(default = "default_true")]
     pub homebrew_hub: bool,
+    /// The Guide opened by itself once already.
+    #[serde(default)]
+    pub seen_guide: bool,
 }
 
 fn default_list_url() -> String {
@@ -89,6 +92,7 @@ impl Default for Library {
             auto_covers: true,
             free_list_url: default_list_url(),
             homebrew_hub: true,
+            seen_guide: false,
         }
     }
 }

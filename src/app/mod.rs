@@ -18,6 +18,7 @@ use std::sync::mpsc::{channel, Receiver};
 
 mod emulators_view;
 mod freegames_view;
+mod guide_view;
 mod library_view;
 mod settings_view;
 mod widgets;
@@ -32,6 +33,7 @@ enum Tab {
     Library,
     Emulators,
     FreeGames,
+    Guide,
     Settings,
 }
 
@@ -158,6 +160,12 @@ impl GameShelfApp {
             status,
             dirty: false,
         };
+        // First start: show how GameShelf works.
+        if !app.lib.seen_guide {
+            app.tab = Tab::Guide;
+            app.lib.seen_guide = true;
+            app.dirty = true;
+        }
         if app.lib.scan_on_start && app.lib.root.is_some() {
             app.sync_folder();
         }
@@ -535,6 +543,9 @@ impl GameShelfApp {
                 {
                     self.add_paths(&files);
                 }
+                if header_tab(ui, "❔ Guide", self.tab == Tab::Guide, t.gold) {
+                    self.tab = Tab::Guide;
+                }
             }
             let folder = egui::Button::new(RichText::new("📁  Add folder").color(Color32::WHITE))
                 .fill(Color32::TRANSPARENT)
@@ -682,6 +693,7 @@ impl eframe::App for GameShelfApp {
                 Tab::Library => self.library_tab(ui),
                 Tab::Emulators => self.emulators_tab(ui),
                 Tab::FreeGames => self.free_games_tab(ui),
+                Tab::Guide => self.guide_tab(ui),
                 Tab::Settings => self.settings_tab(ui),
             });
 
