@@ -77,3 +77,11 @@ without opening the window.
 ## Games
 
 GameShelf ships no games or BIOS files. Use games you own, or free homebrew.
+
+## ☕ ادعم المشروع
+
+إذا أفادك هذا المشروع، يمكنك دعم تطويره عبر PayPal:
+
+[![PayPal](https://img.shields.io/badge/PayPal-Support-00457C?logo=paypal&logoColor=white)](https://paypal.me/SamtSoftware)
+
+👉 https://paypal.me/SamtSoftware
